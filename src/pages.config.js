@@ -9,6 +9,7 @@ import ColdEmailGenerator from './pages/ColdEmailGenerator';
 import ResearchLibrary from './pages/ResearchLibrary';
 import EmailGuidelines from './pages/EmailGuidelines';
 import Settings from './pages/Settings';
+import DigestRecovery from './pages/DigestRecovery';
 import Layout from './Layout.jsx';
 
 
@@ -24,6 +25,7 @@ export const PAGES = {
     "ResearchLibrary": ResearchLibrary,
     "EmailGuidelines": EmailGuidelines,
     "Settings": Settings,
+    "DigestRecovery": DigestRecovery,
 }
 
 export const pagesConfig = {
