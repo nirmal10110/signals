@@ -21,9 +21,10 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronUp,
-  Filter
+  Eye,
+  Trash2
 } from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow, isSameDay } from "date-fns";
 import { toast } from "sonner";
 
 const triggerLabels = {
@@ -63,7 +64,7 @@ export default function DigestHistoryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedOwner, setSelectedOwner] = useState("all");
   const [dateRange, setDateRange] = useState("all");
-  const [expandedAlert, setExpandedAlert] = useState(null);
+  const [expandedDigest, setExpandedDigest] = useState(null);
   const [sendingTo, setSendingTo] = useState(null);
 
   const { data: alerts = [], isLoading: alertsLoading } = useQuery({
@@ -76,67 +77,113 @@ export default function DigestHistoryPage() {
     queryFn: () => base44.entities.Company.list(),
   });
 
-  // Get all sent alerts with recipient information
-  const sentAlerts = useMemo(() => {
-    return alerts
-      .filter(alert => alert.sent_to && alert.sent_to.length > 0)
-      .map(alert => {
-        const company = companies.find(c => c.id === alert.company_id);
-        return {
-          ...alert,
-          company,
-          recipients: alert.sent_to || []
-        };
-      })
-      .sort((a, b) => new Date(b.created_date) - new Date(a.created_date));
-  }, [alerts, companies]);
+  // Get all owners lookup
+  const ownersLookup = useMemo(() => {
+    const lookup = {};
+    companies.forEach(company => {
+      const owners = company.relationship_owners || [];
+      owners.forEach(owner => {
+        if (owner.email && !lookup[owner.email]) {
+          lookup[owner.email] = owner.name || owner.email.split('@')[0];
+        }
+      });
+    });
+    return lookup;
+  }, [companies]);
 
-  // Get unique owners
-  const uniqueOwners = useMemo(() => {
-    const ownersSet = new Set();
+  // Group alerts into digest sends (by recipient + created_date)
+  const digestSends = useMemo(() => {
+    // Get all alerts that have been sent
+    const sentAlerts = alerts.filter(alert => alert.sent_to && alert.sent_to.length > 0);
+    
+    // Build a map of digest sends
+    const digestMap = new Map();
+    
     sentAlerts.forEach(alert => {
-      alert.recipients.forEach(email => {
-        if (email.toLowerCase().endsWith('@volpicapital.com')) {
-          ownersSet.add(email);
+      alert.sent_to.forEach(recipientEmail => {
+        if (!recipientEmail.toLowerCase().endsWith('@volpicapital.com')) return;
+        
+        // Create a key based on recipient + date (group alerts sent on same day)
+        const alertDate = new Date(alert.created_date);
+        const dateKey = `${alertDate.getFullYear()}-${alertDate.getMonth()}-${alertDate.getDate()}`;
+        const digestKey = `${recipientEmail}|${dateKey}`;
+        
+        if (!digestMap.has(digestKey)) {
+          digestMap.set(digestKey, {
+            id: digestKey,
+            recipientEmail,
+            recipientName: ownersLookup[recipientEmail] || recipientEmail.split('@')[0],
+            sendDate: alert.created_date, // Use first alert's date as send date
+            alerts: [],
+            totalAlerts: 0,
+            tier1Count: 0,
+            tier2Count: 0,
+            dismissedCount: 0
+          });
+        }
+        
+        const digest = digestMap.get(digestKey);
+        
+        // Add alert to digest
+        digest.alerts.push({
+          ...alert,
+          company: companies.find(c => c.id === alert.company_id)
+        });
+        
+        digest.totalAlerts++;
+        if (alert.tier === 'tier_1') digest.tier1Count++;
+        if (alert.tier === 'tier_2') digest.tier2Count++;
+        if (alert.status === 'dismissed') digest.dismissedCount++;
+        
+        // Update send date to latest alert's created date
+        if (new Date(alert.created_date) > new Date(digest.sendDate)) {
+          digest.sendDate = alert.created_date;
         }
       });
     });
     
-    const ownersList = Array.from(ownersSet).map(email => {
-      // Try to find owner name from companies
-      let name = email.split('@')[0];
-      for (const company of companies) {
-        const owners = company.relationship_owners || [];
-        const matchingOwner = owners.find(o => o.email === email);
-        if (matchingOwner && matchingOwner.name) {
-          name = matchingOwner.name;
-          break;
-        }
-      }
-      return { email, name };
+    // Convert to array and sort by send date (newest first)
+    return Array.from(digestMap.values())
+      .sort((a, b) => new Date(b.sendDate) - new Date(a.sendDate));
+  }, [alerts, companies, ownersLookup]);
+
+  // Get unique owners
+  const uniqueOwners = useMemo(() => {
+    const ownersSet = new Set();
+    digestSends.forEach(digest => {
+      ownersSet.add(digest.recipientEmail);
     });
     
-    return ownersList.sort((a, b) => a.name.localeCompare(b.name));
-  }, [sentAlerts, companies]);
+    return Array.from(ownersSet)
+      .map(email => ({
+        email,
+        name: ownersLookup[email] || email.split('@')[0]
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [digestSends, ownersLookup]);
 
-  // Filter alerts based on search and filters
-  const filteredAlerts = useMemo(() => {
-    let filtered = [...sentAlerts];
+  // Filter digests based on search and filters
+  const filteredDigests = useMemo(() => {
+    let filtered = [...digestSends];
 
     // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(alert => 
-        alert.company_name?.toLowerCase().includes(query) ||
-        alert.headline?.toLowerCase().includes(query) ||
-        alert.summary?.toLowerCase().includes(query)
+      filtered = filtered.filter(digest => 
+        digest.recipientName.toLowerCase().includes(query) ||
+        digest.recipientEmail.toLowerCase().includes(query) ||
+        digest.alerts.some(alert => 
+          alert.company_name?.toLowerCase().includes(query) ||
+          alert.headline?.toLowerCase().includes(query) ||
+          alert.summary?.toLowerCase().includes(query)
+        )
       );
     }
 
     // Filter by owner
     if (selectedOwner !== "all") {
-      filtered = filtered.filter(alert => 
-        alert.recipients.includes(selectedOwner)
+      filtered = filtered.filter(digest => 
+        digest.recipientEmail === selectedOwner
       );
     }
 
@@ -160,70 +207,31 @@ export default function DigestHistoryPage() {
       }
       
       if (cutoffDate) {
-        filtered = filtered.filter(alert => 
-          new Date(alert.created_date) >= cutoffDate
+        filtered = filtered.filter(digest => 
+          new Date(digest.sendDate) >= cutoffDate
         );
       }
     }
 
     return filtered;
-  }, [sentAlerts, searchQuery, selectedOwner, dateRange]);
+  }, [digestSends, searchQuery, selectedOwner, dateRange]);
 
-  // Group alerts by recipient for stats
-  const statsByOwner = useMemo(() => {
-    const stats = {};
-    
-    sentAlerts.forEach(alert => {
-      alert.recipients.forEach(email => {
-        if (!email.toLowerCase().endsWith('@volpicapital.com')) return;
-        
-        if (!stats[email]) {
-          stats[email] = {
-            email,
-            name: uniqueOwners.find(o => o.email === email)?.name || email.split('@')[0],
-            totalAlerts: 0,
-            tier1Alerts: 0,
-            companies: new Set()
-          };
-        }
-        
-        stats[email].totalAlerts++;
-        if (alert.tier === 'tier_1') stats[email].tier1Alerts++;
-        stats[email].companies.add(alert.company_name);
-      });
-    });
-    
-    return Object.values(stats).map(stat => ({
-      ...stat,
-      companies: stat.companies.size
-    }));
-  }, [sentAlerts, uniqueOwners]);
-
-  const handleResendAlert = async (alert) => {
-    setSendingTo(alert.id);
+  const handleResendDigest = async (digest) => {
+    setSendingTo(digest.id);
     
     try {
-      // Find the first recipient (primary owner)
-      const primaryRecipient = alert.recipients.find(email => 
-        email.toLowerCase().endsWith('@volpicapital.com')
-      );
-      
-      if (!primaryRecipient) {
-        toast.error('No valid recipient found for this alert');
-        return;
-      }
-      
+      console.log('🔄 Resending entire digest to:', digest.recipientEmail);
       const response = await base44.functions.invoke('resendSingleDigest', {
-        owner_email: primaryRecipient
+        owner_email: digest.recipientEmail
       });
       
       if (response.data.success) {
-        toast.success(`✅ Digest resent to ${primaryRecipient}`);
+        toast.success(`✅ Digest resent to ${digest.recipientName} (${response.data.alerts_sent} alerts)`);
       } else {
         toast.error('Failed to resend: ' + (response.data.error || 'Unknown error'));
       }
     } catch (error) {
-      console.error('Error resending:', error);
+      console.error('Error resending digest:', error);
       toast.error('Failed to resend: ' + error.message);
     } finally {
       setSendingTo(null);
@@ -242,8 +250,8 @@ export default function DigestHistoryPage() {
     <div className="min-h-screen bg-slate-50 p-6">
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-900">Digest History</h1>
-          <p className="text-slate-600 mt-1">Complete history of all sent digests and alerts</p>
+          <h1 className="text-3xl font-bold text-slate-900">📬 Digest Email Repository</h1>
+          <p className="text-slate-600 mt-1">Complete history of all digest emails sent to your team</p>
         </div>
 
         {/* Stats Overview */}
@@ -252,8 +260,8 @@ export default function DigestHistoryPage() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-slate-600">Total Sent</p>
-                  <p className="text-2xl font-bold text-slate-900">{sentAlerts.length}</p>
+                  <p className="text-sm text-slate-600">Total Digests</p>
+                  <p className="text-2xl font-bold text-slate-900">{digestSends.length}</p>
                 </div>
                 <Mail className="w-8 h-8 text-blue-500" />
               </div>
@@ -276,12 +284,12 @@ export default function DigestHistoryPage() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-slate-600">Tier 1 Alerts</p>
+                  <p className="text-sm text-slate-600">Total Alerts</p>
                   <p className="text-2xl font-bold text-slate-900">
-                    {sentAlerts.filter(a => a.tier === 'tier_1').length}
+                    {digestSends.reduce((sum, d) => sum + d.totalAlerts, 0)}
                   </p>
                 </div>
-                <Mail className="w-8 h-8 text-red-500" />
+                <Mail className="w-8 h-8 text-purple-500" />
               </div>
             </CardContent>
           </Card>
@@ -292,14 +300,14 @@ export default function DigestHistoryPage() {
                 <div>
                   <p className="text-sm text-slate-600">Last 7 Days</p>
                   <p className="text-2xl font-bold text-slate-900">
-                    {sentAlerts.filter(a => {
+                    {digestSends.filter(d => {
                       const sevenDaysAgo = new Date();
                       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-                      return new Date(a.created_date) >= sevenDaysAgo;
+                      return new Date(d.sendDate) >= sevenDaysAgo;
                     }).length}
                   </p>
                 </div>
-                <Calendar className="w-8 h-8 text-purple-500" />
+                <Calendar className="w-8 h-8 text-amber-500" />
               </div>
             </CardContent>
           </Card>
@@ -313,7 +321,7 @@ export default function DigestHistoryPage() {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <Input
-                    placeholder="Search by company, headline, or content..."
+                    placeholder="Search by recipient, company, or alert content..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-10"
@@ -351,7 +359,7 @@ export default function DigestHistoryPage() {
             {(searchQuery || selectedOwner !== "all" || dateRange !== "all") && (
               <div className="mt-4 flex items-center gap-2">
                 <Badge variant="outline" className="bg-blue-50">
-                  {filteredAlerts.length} result{filteredAlerts.length !== 1 ? 's' : ''}
+                  {filteredDigests.length} digest{filteredDigests.length !== 1 ? 's' : ''}
                 </Badge>
                 <Button
                   variant="ghost"
@@ -369,78 +377,93 @@ export default function DigestHistoryPage() {
           </CardContent>
         </Card>
 
-        {/* Alerts List */}
-        {filteredAlerts.length === 0 ? (
+        {/* Digests List */}
+        {filteredDigests.length === 0 ? (
           <Card>
             <CardContent className="p-12 text-center">
               <Mail className="w-12 h-12 mx-auto mb-4 text-slate-300" />
               <p className="text-slate-600">
-                {sentAlerts.length === 0 
+                {digestSends.length === 0 
                   ? 'No digests have been sent yet.'
-                  : 'No alerts match your filters.'}
+                  : 'No digests match your filters.'}
               </p>
             </CardContent>
           </Card>
         ) : (
           <div className="space-y-4">
-            {filteredAlerts.map((alert) => {
-              const isExpanded = expandedAlert === alert.id;
-              const ownerName = uniqueOwners.find(o => o.email === alert.recipients[0])?.name || alert.recipients[0];
+            {filteredDigests.map((digest) => {
+              const isExpanded = expandedDigest === digest.id;
 
               return (
-                <Card key={alert.id} className="bg-white border-slate-200">
+                <Card key={digest.id} className="bg-white border-slate-200">
                   <CardHeader 
                     className="border-b border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors"
-                    onClick={() => setExpandedAlert(isExpanded ? null : alert.id)}
+                    onClick={() => setExpandedDigest(isExpanded ? null : digest.id)}
                   >
                     <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          {alert.tier === 'tier_1' && (
-                            <Badge className="bg-red-100 text-red-800 border-red-200 font-bold">
-                              TIER 1
-                            </Badge>
-                          )}
-                          <Badge className={priorityColors[alert.priority]}>
-                            {alert.priority?.toUpperCase()}
-                          </Badge>
-                          <Badge variant="outline" className="bg-white">
-                            {triggerLabels[alert.trigger_type]}
-                          </Badge>
+                      <div className="flex items-start gap-4 flex-1">
+                        <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                          <Mail className="w-6 h-6 text-emerald-600" />
                         </div>
                         
-                        <h3 className="text-lg font-bold text-slate-900 mb-1">
-                          {alert.company_name}
-                        </h3>
-                        <p className="text-sm text-slate-700 mb-2">{alert.headline}</p>
-                        
-                        <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
-                          <span>📧 Sent to: {alert.recipients.length} recipient{alert.recipients.length !== 1 ? 's' : ''}</span>
-                          <span>📅 {format(new Date(alert.created_date), "MMM d, yyyy 'at' h:mm a")}</span>
-                          <span>⏰ {formatDistanceToNow(new Date(alert.created_date), { addSuffix: true })}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2">
+                            <h3 className="text-lg font-bold text-slate-900">
+                              {digest.recipientName}
+                            </h3>
+                            <Badge variant="outline" className="bg-blue-50">
+                              {digest.recipientEmail}
+                            </Badge>
+                          </div>
+                          
+                          <div className="flex items-center gap-3 mb-2 flex-wrap">
+                            <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
+                              {digest.totalAlerts} alert{digest.totalAlerts !== 1 ? 's' : ''}
+                            </Badge>
+                            {digest.tier1Count > 0 && (
+                              <Badge className="bg-red-100 text-red-800 border-red-200">
+                                {digest.tier1Count} Tier 1
+                              </Badge>
+                            )}
+                            {digest.tier2Count > 0 && (
+                              <Badge className="bg-blue-100 text-blue-800 border-blue-200">
+                                {digest.tier2Count} Tier 2
+                              </Badge>
+                            )}
+                            {digest.dismissedCount > 0 && (
+                              <Badge variant="outline" className="bg-slate-100">
+                                <Trash2 className="w-3 h-3 mr-1" />
+                                {digest.dismissedCount} dismissed
+                              </Badge>
+                            )}
+                          </div>
+                          
+                          <div className="flex items-center gap-4 text-xs text-slate-500">
+                            <span>📅 Sent: {format(new Date(digest.sendDate), "MMM d, yyyy 'at' h:mm a")}</span>
+                            <span>⏰ {formatDistanceToNow(new Date(digest.sendDate), { addSuffix: true })}</span>
+                          </div>
                         </div>
                       </div>
                       
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-shrink-0">
                         <Button
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleResendAlert(alert);
+                            handleResendDigest(digest);
                           }}
                           disabled={sendingTo !== null}
                           size="sm"
-                          variant="outline"
-                          className="bg-white"
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white"
                         >
-                          {sendingTo === alert.id ? (
+                          {sendingTo === digest.id ? (
                             <>
                               <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                              Sending...
+                              Resending...
                             </>
                           ) : (
                             <>
                               <Send className="w-4 h-4 mr-2" />
-                              Resend
+                              Resend Digest
                             </>
                           )}
                         </Button>
@@ -456,66 +479,81 @@ export default function DigestHistoryPage() {
                   
                   {isExpanded && (
                     <CardContent className="p-6">
-                      <div className="space-y-4">
-                        {/* Recipients */}
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900 mb-2">📧 Recipients:</p>
-                          <div className="flex flex-wrap gap-2">
-                            {alert.recipients.map(email => {
-                              const owner = uniqueOwners.find(o => o.email === email);
-                              return (
-                                <Badge key={email} variant="outline" className="bg-emerald-50">
-                                  {owner?.name || email}
+                      <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p className="text-sm font-semibold text-blue-900 mb-2">📧 Digest Email Details</p>
+                        <div className="text-sm text-blue-800 space-y-1">
+                          <p><strong>Subject:</strong> Your Volpi Lens Digest — {format(new Date(digest.sendDate), "do MMMM yyyy")}</p>
+                          <p><strong>To:</strong> {digest.recipientEmail}</p>
+                          <p><strong>Sent:</strong> {format(new Date(digest.sendDate), "EEEE, MMMM d, yyyy 'at' h:mm a")}</p>
+                          <p><strong>Total Alerts:</strong> {digest.totalAlerts} ({digest.tier1Count} must follow-up, {digest.tier2Count} optional)</p>
+                          {digest.dismissedCount > 0 && (
+                            <p className="text-amber-700"><strong>Note:</strong> {digest.dismissedCount} alert{digest.dismissedCount !== 1 ? 's were' : ' was'} later dismissed (still visible in history)</p>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <h4 className="text-sm font-semibold text-slate-900 mb-3">📋 Alerts in This Digest:</h4>
+                      <div className="space-y-3">
+                        {digest.alerts
+                          .sort((a, b) => {
+                            if (a.tier === 'tier_1' && b.tier !== 'tier_1') return -1;
+                            if (a.tier !== 'tier_1' && b.tier === 'tier_1') return 1;
+                            return 0;
+                          })
+                          .map((alert) => (
+                          <Card key={alert.id} className="bg-slate-50 border-slate-200">
+                            <CardContent className="p-4">
+                              <div className="flex items-start gap-2 mb-2 flex-wrap">
+                                {alert.tier === 'tier_1' && (
+                                  <Badge className="bg-red-100 text-red-800 border-red-200 font-bold">
+                                    TIER 1
+                                  </Badge>
+                                )}
+                                <Badge className={priorityColors[alert.priority]}>
+                                  {alert.priority?.toUpperCase()}
                                 </Badge>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        
-                        {/* Summary */}
-                        {alert.summary && (
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900 mb-2">Summary:</p>
-                            <p className="text-sm text-slate-700">{alert.summary}</p>
-                          </div>
-                        )}
-                        
-                        {/* Actionable Insight */}
-                        {alert.actionable_insight && (
-                          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
-                            <p className="text-sm font-semibold text-emerald-900 mb-2">💡 Actionable Insight</p>
-                            <p className="text-sm text-emerald-800">{alert.actionable_insight}</p>
-                          </div>
-                        )}
-                        
-                        {/* Source */}
-                        {alert.source_url && (
-                          <div>
-                            <a
-                              href={alert.source_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-2 text-sm text-emerald-600 hover:text-emerald-800"
-                            >
-                              View Source
-                              <ExternalLink className="w-4 h-4" />
-                            </a>
-                          </div>
-                        )}
-                        
-                        {/* Dates */}
-                        <div className="pt-4 border-t border-slate-200">
-                          <div className="grid grid-cols-2 gap-4 text-xs text-slate-600">
-                            <div>
-                              <span className="font-semibold">Published:</span>{' '}
-                              {format(new Date(alert.detected_date || alert.created_date), "MMM d, yyyy")}
-                            </div>
-                            <div>
-                              <span className="font-semibold">Sent:</span>{' '}
-                              {format(new Date(alert.created_date), "MMM d, yyyy 'at' h:mm a")}
-                            </div>
-                          </div>
-                        </div>
+                                <Badge variant="outline" className="bg-white">
+                                  {triggerLabels[alert.trigger_type]}
+                                </Badge>
+                                {alert.status === 'dismissed' && (
+                                  <Badge variant="outline" className="bg-slate-100 text-slate-600">
+                                    <Trash2 className="w-3 h-3 mr-1" />
+                                    Dismissed
+                                  </Badge>
+                                )}
+                              </div>
+                              
+                              <h5 className="text-md font-bold text-slate-900 mb-1">{alert.company_name}</h5>
+                              <p className="text-sm text-slate-700 mb-2">{alert.headline}</p>
+                              
+                              {alert.summary && (
+                                <p className="text-xs text-slate-600 mb-2">{alert.summary}</p>
+                              )}
+
+                              {alert.actionable_insight && (
+                                <div className="mt-2 p-2 bg-emerald-50 border border-emerald-200 rounded">
+                                  <p className="text-xs font-semibold text-emerald-900">💡 Actionable Insight</p>
+                                  <p className="text-xs text-emerald-800 mt-1">{alert.actionable_insight}</p>
+                                </div>
+                              )}
+                              
+                              <div className="flex items-center gap-4 text-xs text-slate-500 mt-2">
+                                <span>📅 {format(new Date(alert.detected_date || alert.created_date), "MMM d, yyyy")}</span>
+                                {alert.source_url && (
+                                  <a
+                                    href={alert.source_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1 text-emerald-600 hover:text-emerald-800"
+                                  >
+                                    Source
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
                       </div>
                     </CardContent>
                   )}
