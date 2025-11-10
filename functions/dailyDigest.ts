@@ -1,4 +1,3 @@
-
 import { createClientFromRequest } from 'npm:@base44/sdk@0.7.1';
 import { format } from "npm:date-fns@3.6.0";
 
@@ -10,11 +9,8 @@ function isValidVolpiEmail(email) {
 function generateDigestHTML(ownerName, date, alerts, volpiContent) {
     // Sort alerts: TIER 1 first, then TIER 2, then by date within each tier
     const sortedAlerts = [...alerts].sort((a, b) => {
-        // Tier 1 alerts go first
         if (a.tier === 'tier_1' && b.tier !== 'tier_1') return -1;
         if (a.tier !== 'tier_1' && b.tier === 'tier_1') return 1;
-        
-        // Within same tier, sort by detected date (newest first)
         const dateA = new Date(a.detected_date || a.created_date);
         const dateB = new Date(b.detected_date || b.created_date);
         return dateB.getTime() - dateA.getTime();
@@ -22,19 +18,19 @@ function generateDigestHTML(ownerName, date, alerts, volpiContent) {
 
     const alertRows = sortedAlerts.map(alert => {
         const tierBadge = alert.tier === 'tier_1' 
-            ? '<span style="display: inline-block; background: #dc2626; color: white; padding: 6px 12px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">TIER 1</span>' 
+            ? '<span style="display: inline-block; background: #dc2626; color: white; padding: 8px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; box-shadow: 0 2px 4px rgba(220, 38, 38, 0.3);">TIER 1 - MUST FOLLOW UP</span>' 
             : '';
         
         const priorityColors = {
-            high: 'background: #dc2626; color: white;',
-            medium: 'background: #f59e0b; color: white;',
-            low: 'background: #3b82f6; color: white;'
+            high: 'background: #dc2626; color: white; box-shadow: 0 2px 4px rgba(220, 38, 38, 0.3);',
+            medium: 'background: #f59e0b; color: white; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.3);',
+            low: 'background: #3b82f6; color: white; box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);'
         };
 
-        const priorityBadge = `<span style="display: inline-block; ${priorityColors[alert.priority]} padding: 6px 12px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 6px;">${alert.priority}</span>`;
+        const priorityBadge = `<span style="display: inline-block; ${priorityColors[alert.priority]} padding: 8px 14px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 8px;">${alert.priority}</span>`;
 
         const triggerLabel = alert.trigger_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-        const triggerBadge = `<span style="display: inline-block; background: #059669; color: white; padding: 6px 12px; border-radius: 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; margin-left: 6px;">${triggerLabel}</span>`;
+        const triggerBadge = `<span style="display: inline-block; background: #10b981; color: white; padding: 8px 14px; border-radius: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; margin-left: 8px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);">${triggerLabel}</span>`;
 
         const relevantContent = (alert.volpi_content || [])
             .map(url => volpiContent.find(c => c.url === url))
@@ -43,71 +39,50 @@ function generateDigestHTML(ownerName, date, alerts, volpiContent) {
         const publishedDate = format(new Date(alert.detected_date || alert.created_date), "d MMM yyyy");
         const detectedDate = format(new Date(alert.created_date), "d MMM yyyy");
 
-        // Feedback links
-        const feedbackSection = `
-        <div style="margin-top: 20px; padding: 16px; background: #f0fdf4; border: 1px solid #d1fae5; border-radius: 4px; text-align: center;">
-            <p style="margin: 0 0 10px 0; font-size: 12px; color: #059669; font-weight: 600;">Was this alert helpful?</p>
-            <div style="display: flex; justify-content: center; gap: 12px;">
-                <a href="https://app.base44.com/feedback?alert_id=${alert.id}&feedback=helpful" style="display: inline-block; padding: 8px 16px; background: #059669; color: white; text-decoration: none; border-radius: 4px; font-size: 13px; font-weight: 600;">👍 Helpful</a>
-                <a href="https://app.base44.com/feedback?alert_id=${alert.id}&feedback=not_helpful" style="display: inline-block; padding: 8px 16px; background: #f59e0b; color: white; text-decoration: none; border-radius: 4px; font-size: 13px; font-weight: 600;">👎 Not Helpful</a>
-                <a href="https://app.base44.com/feedback?alert_id=${alert.id}&feedback=false_positive" style="display: inline-block; padding: 8px 16px; background: #ef4444; color: white; text-decoration: none; border-radius: 4px; font-size: 13px; font-weight: 600;">❌ False Positive</a>
-            </div>
-            <p style="margin: 10px 0 0 0; font-size: 11px; color: #6b7280;">Your feedback helps Volpi Lens improve</p>
-        </div>
-        `;
-
         return `
-        <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 28px; margin-bottom: 24px;">
-            <div style="margin-bottom: 16px;">
+        <div style="background: #ffffff; border: 2px solid #e5e7eb; border-radius: 12px; padding: 32px; margin-bottom: 28px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);">
+            <div style="margin-bottom: 18px;">
                 ${tierBadge}${priorityBadge}${triggerBadge}
             </div>
             
-            <h3 style="margin: 0 0 12px 0; font-size: 22px; font-weight: 700; color: #059669; line-height: 1.3;">${alert.company_name}</h3>
-            <p style="margin: 0 0 16px 0; font-size: 16px; color: #374151; line-height: 1.5; font-weight: 500;">${alert.headline}</p>
+            <h3 style="margin: 0 0 14px 0; font-size: 24px; font-weight: 700; color: #059669; line-height: 1.3;">${alert.company_name}</h3>
+            <p style="margin: 0 0 18px 0; font-size: 17px; color: #1f2937; line-height: 1.6; font-weight: 500;">${alert.headline}</p>
             
-            ${alert.summary ? `<p style="margin: 0 0 16px 0; font-size: 14px; color: #6b7280; line-height: 1.6;">${alert.summary}</p>` : ''}
+            ${alert.summary ? `<p style="margin: 0 0 18px 0; font-size: 15px; color: #4b5563; line-height: 1.7;">${alert.summary}</p>` : ''}
             
-            <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; font-size: 13px; color: #9ca3af; padding-bottom: 16px; border-bottom: 1px solid #f3f4f6;">
+            <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 22px; font-size: 14px; color: #6b7280; padding: 16px; background: #f9fafb; border-radius: 8px;">
                 <div>
-                    <span style="font-weight: 600; color: #374151;">Published:</span> ${publishedDate}
-                    ${alert.date_evidence ? ` <span style="font-size: 11px; color: #9ca3af;">(${alert.date_evidence})</span>` : ''}
+                    <span style="font-weight: 700; color: #1f2937;">📅 Published:</span> <span style="color: #374151;">${publishedDate}</span>
+                    ${alert.date_evidence ? ` <span style="font-size: 12px; color: #9ca3af;">(${alert.date_evidence})</span>` : ''}
                 </div>
                 <div>
-                    <span style="font-weight: 600; color: #374151;">Detected:</span> ${detectedDate}
-                    ${alert.source_url ? ` · <a href="${alert.source_url}" style="color: #059669; text-decoration: none; font-weight: 500;">View Source</a>` : ''}
+                    <span style="font-weight: 700; color: #1f2937;">🔍 Detected:</span> <span style="color: #374151;">${detectedDate}</span>
+                    ${alert.source_url ? ` · <a href="${alert.source_url}" style="color: #059669; text-decoration: none; font-weight: 600;">View Source →</a>` : ''}
                 </div>
             </div>
             
             ${alert.actionable_insight ? `
-            <div style="margin-bottom: 20px; padding: 20px; background: #f0fdf4; border-left: 3px solid #059669; border-radius: 4px;">
-                <p style="margin: 0 0 8px 0; font-size: 12px; font-weight: 700; color: #059669; text-transform: uppercase; letter-spacing: 0.5px;">💡 Actionable Insight</p>
-                <p style="margin: 0; font-size: 14px; color: #065f46; line-height: 1.6;">${alert.actionable_insight}</p>
+            <div style="margin-bottom: 22px; padding: 22px; background: #ecfdf5; border-left: 4px solid #059669; border-radius: 8px; box-shadow: 0 2px 4px rgba(5, 150, 105, 0.1);">
+                <p style="margin: 0 0 10px 0; font-size: 13px; font-weight: 700; color: #047857; text-transform: uppercase; letter-spacing: 0.5px;">💡 Actionable Insight</p>
+                <p style="margin: 0; font-size: 15px; color: #065f46; line-height: 1.7; font-weight: 500;">${alert.actionable_insight}</p>
             </div>
             ` : ''}
             
             ${alert.draft_email ? `
-            <div style="margin-bottom: 20px; padding: 20px; background: #fafafa; border: 1px solid #e5e7eb; border-radius: 4px;">
-                <p style="margin: 0 0 12px 0; font-size: 12px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: 0.5px;">📧 Suggested Outreach</p>
-                <pre style="margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; color: #374151; white-space: pre-wrap; line-height: 1.7;">${alert.draft_email}</pre>
+            <div style="padding: 22px; background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);">
+                <p style="margin: 0 0 14px 0; font-size: 13px; font-weight: 700; color: #1e293b; text-transform: uppercase; letter-spacing: 0.5px;">📧 Suggested Outreach</p>
+                <pre style="margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; color: #334155; white-space: pre-wrap; line-height: 1.8;">${alert.draft_email}</pre>
             </div>
             ` : ''}
             
             ${relevantContent.length > 0 ? `
-            <div style="padding: 20px; background: #fafafa; border: 1px solid #e5e7eb; border-radius: 4px; margin-bottom: 20px;">
-                <p style="margin: 0 0 12px 0; font-size: 12px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: 0.5px;">📚 Relevant Collateral</p>
+            <div style="padding: 22px; background: #faf5ff; border: 2px solid #e9d5ff; border-radius: 8px; margin-top: 22px; box-shadow: 0 2px 4px rgba(168, 85, 247, 0.1);">
+                <p style="margin: 0 0 14px 0; font-size: 13px; font-weight: 700; color: #7c3aed; text-transform: uppercase; letter-spacing: 0.5px;">📚 Relevant Collateral</p>
                 <ul style="margin: 0; padding: 0; list-style: none;">
-                    ${relevantContent.map(c => `<li style="margin-bottom: 8px;"><a href="${c.url}" style="color: #059669; text-decoration: none; font-size: 14px; font-weight: 500;">→ ${c.title}</a></li>`).join('')}
+                    ${relevantContent.map(c => `<li style="margin-bottom: 10px;"><a href="${c.url}" style="color: #7c3aed; text-decoration: none; font-size: 15px; font-weight: 600;">→ ${c.title}</a></li>`).join('')}
                 </ul>
-                <p style="margin: 12px 0 0 0;"><a href="https://volpicapital.com/news" style="color: #059669; text-decoration: none; font-size: 13px; font-weight: 600;">View more at volpicapital.com/news →</a></p>
             </div>
-            ` : `
-            <div style="padding: 20px; background: #fafafa; border: 1px solid #e5e7eb; border-radius: 4px; margin-bottom: 20px;">
-                <p style="margin: 0 0 8px 0; font-size: 12px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: 0.5px;">📚 Relevant Collateral</p>
-                <p style="margin: 0;"><a href="https://volpicapital.com/news" style="color: #059669; text-decoration: none; font-size: 14px; font-weight: 500;">View our latest insights at volpicapital.com/news →</a></p>
-            </div>
-            `}
-            
-            ${feedbackSection}
+            ` : ''}
         </div>
         `;
     }).join('');
@@ -126,26 +101,26 @@ function generateDigestHTML(ownerName, date, alerts, volpiContent) {
             }
         </style>
     </head>
-    <body style="background-color: #f9fafb; padding: 20px;">
-        <div class="container" style="max-width: 700px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-            <div style="background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #ffffff; padding: 40px 32px; text-align: center;">
-                <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68f5e8c214c862c9e823b068/21277dc16_volpi.png" alt="Volpi Capital" class="logo" style="max-width: 180px; height: auto; margin-bottom: 20px;" />
-                <h1 style="margin: 0 0 8px 0; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">Volpi Lens Intelligence Digest</h1>
-                <p style="margin: 0; font-size: 16px; color: #d1fae5; font-weight: 500;">${date}</p>
+    <body style="background-color: #f3f4f6; padding: 20px;">
+        <div class="container" style="max-width: 700px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);">
+            <div style="background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #ffffff; padding: 44px 36px; text-align: center;">
+                <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68f5e8c214c862c9e823b068/21277dc16_volpi.png" alt="Volpi Capital" class="logo" style="max-width: 200px; height: auto; margin-bottom: 24px;" />
+                <h1 style="margin: 0 0 10px 0; font-size: 32px; font-weight: 700; letter-spacing: -0.5px;">Volpi Lens Intelligence Digest</h1>
+                <p style="margin: 0; font-size: 18px; color: #d1fae5; font-weight: 500;">${date}</p>
             </div>
             
-            <div style="padding: 40px 32px;">
-                <p style="margin: 0 0 32px 0; font-size: 16px; color: #374151; line-height: 1.6;">Hi <strong>${ownerName}</strong>,</p>
-                <p style="margin: 0 0 32px 0; font-size: 16px; color: #374151; line-height: 1.6;">Here are your latest intelligence alerts from your monitored target companies:</p>
+            <div style="padding: 44px 36px;">
+                <p style="margin: 0 0 28px 0; font-size: 18px; color: #1f2937; line-height: 1.6;">Hi <strong style="color: #059669;">${ownerName}</strong>,</p>
+                <p style="margin: 0 0 36px 0; font-size: 16px; color: #4b5563; line-height: 1.7;">Here are your latest intelligence alerts from Volpi Lens:</p>
                 
                 ${alertRows}
             </div>
             
-            <div style="background: #f0fdf4; padding: 32px; text-align: center; border-top: 1px solid #d1fae5;">
-                <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68f5e8c214c862c9e823b068/21277dc16_volpi.png" alt="Volpi Capital" style="max-width: 140px; height: auto; margin-bottom: 16px;" />
-                <p style="margin: 0 0 8px 0; font-size: 14px; color: #059669; font-weight: 700;">Volpi Capital</p>
-                <p style="margin: 0; font-size: 12px; color: #6b7280;">Private Equity Intelligence Platform</p>
-                <p style="margin: 12px 0 0 0;"><a href="https://volpicapital.com" style="color: #059669; text-decoration: none; font-size: 13px; font-weight: 600;">volpicapital.com</a></p>
+            <div style="background: #ecfdf5; padding: 36px; text-align: center; border-top: 3px solid #10b981;">
+                <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68f5e8c214c862c9e823b068/21277dc16_volpi.png" alt="Volpi Capital" style="max-width: 160px; height: auto; margin-bottom: 18px; opacity: 0.9;" />
+                <p style="margin: 0 0 10px 0; font-size: 16px; color: #047857; font-weight: 700;">Volpi Capital</p>
+                <p style="margin: 0; font-size: 13px; color: #065f46;">Private Equity Intelligence Platform</p>
+                <p style="margin: 14px 0 0 0;"><a href="https://volpicapital.com" style="color: #059669; text-decoration: none; font-size: 14px; font-weight: 600;">volpicapital.com</a></p>
             </div>
         </div>
     </body>
@@ -157,7 +132,6 @@ Deno.serve(async (req) => {
     try {
         const base44 = createClientFromRequest(req);
         
-        // Get all new alerts from the last 30 DAYS that haven't been sent yet
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         
@@ -174,20 +148,16 @@ Deno.serve(async (req) => {
             });
         }
 
-        // Get all companies to map alerts to owners
         const companyIds = [...new Set(allPotentialAlerts.map(a => a.company_id))];
         const companies = await base44.asServiceRole.entities.Company.filter({
             id: { $in: companyIds }
         });
 
-        // Get Volpi content for linking
         const volpiContent = await base44.asServiceRole.entities.VolpiContent.list();
 
-        // Determine if today is a weekly send day (e.g., Monday)
         const today = new Date();
-        const isWeeklySendDay = today.getDay() === 1; // Monday = 1
+        const isWeeklySendDay = today.getDay() === 1;
 
-        // Group alerts by Volpi Owner - ENSURE ALL OWNERS GET THEIR ALERTS
         const alertsByOwner = {};
         const ownersSkippedWeekly = new Set();
         
@@ -209,23 +179,19 @@ Deno.serve(async (req) => {
                     continue;
                 }
                 
-                // ⚠️ SECURITY: Only send to @volpicapital.com addresses
                 if (!isValidVolpiEmail(owner.email)) {
                     console.log(`  ⚠️ Skipping non-Volpi email: ${owner.email}`);
                     continue;
                 }
 
-                // Check digest frequency preference
                 const digestFrequency = owner.digest_frequency || 'daily';
                 
-                // Skip weekly users if not weekly send day
                 if (digestFrequency === 'weekly' && !isWeeklySendDay) {
                     console.log(`  ⏭️ Skipping ${owner.email} - weekly digest not due today`);
                     ownersSkippedWeekly.add(owner.email);
                     continue;
                 }
                 
-                // Skip this alert if already sent to this specific owner
                 if (alert.sent_to && alert.sent_to.includes(owner.email)) {
                     console.log(`  ⏭️ Already sent to ${owner.email}`);
                     continue;
@@ -241,7 +207,6 @@ Deno.serve(async (req) => {
                     };
                 }
                 
-                // Group by company to limit per company
                 if (!alertsByOwner[owner.email].alertsByCompany[company.id]) {
                     alertsByOwner[owner.email].alertsByCompany[company.id] = [];
                 }
@@ -255,10 +220,8 @@ Deno.serve(async (req) => {
         const results = [];
         const dateStr = format(new Date(), 'do MMMM yyyy');
 
-        // Send digest to each owner
         for (const [ownerEmail, data] of Object.entries(alertsByOwner)) {
             try {
-                // Double-check email domain before sending (for robustness)
                 if (!isValidVolpiEmail(ownerEmail)) {
                     console.log(`⚠️ Blocked attempt to send to non-Volpi email: ${ownerEmail} (final check)`);
                     results.push({
@@ -269,22 +232,18 @@ Deno.serve(async (req) => {
                     continue;
                 }
 
-                // Limit to 2 alerts per company and deduplicate
                 const allAlertsForOwner = [];
                 const seenAlertIds = new Set();
                 
                 for (const [companyId, companyAlerts] of Object.entries(data.alertsByCompany)) {
-                    // Sort by priority (tier_1 first, then by date)
                     const sortedAlerts = companyAlerts.sort((a, b) => {
                         if (a.tier === 'tier_1' && b.tier !== 'tier_1') return -1;
                         if (a.tier !== 'tier_1' && b.tier === 'tier_1') return 1;
                         return new Date(b.created_date).getTime() - new Date(a.created_date).getTime();
                     });
                     
-                    // Take max 2 alerts per company
                     const limitedAlerts = sortedAlerts.slice(0, 2);
                     
-                    // Deduplicate by alert ID
                     for (const alert of limitedAlerts) {
                         if (!seenAlertIds.has(alert.id)) {
                             seenAlertIds.add(alert.id);
@@ -307,11 +266,9 @@ Deno.serve(async (req) => {
                     volpiContent
                 );
 
-                // Determine subject line based on digest frequency
                 const digestType = data.digestFrequency === 'weekly' ? 'Weekly' : 'Daily';
                 const subjectLine = `Your ${digestType} Volpi Lens Digest — ${dateStr}`;
 
-                // Use Base44 email service
                 await base44.asServiceRole.integrations.Core.SendEmail({
                     to: ownerEmail,
                     subject: subjectLine,
@@ -319,7 +276,6 @@ Deno.serve(async (req) => {
                     from_name: 'Volpi Capital'
                 });
 
-                // ✅ MARK ALERTS AS SENT (add owner email to sent_to array)
                 for (const alert of allAlertsForOwner) {
                     const currentSentTo = alert.sent_to || [];
                     const updatedSentTo = [...new Set([...currentSentTo, ownerEmail])];
