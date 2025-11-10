@@ -96,7 +96,7 @@ export default function Dashboard() {
             <Button 
               onClick={runMonitoring}
               disabled={isMonitoring}
-              className="bg-slate-900 hover:bg-slate-800 text-white"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
             >
               {isMonitoring ? (
                 <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -108,7 +108,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <StatsCards
             title="Tier 1 Alerts"
             value={tier1Alerts.length}
@@ -127,15 +127,8 @@ export default function Dashboard() {
             title="Active Targets"
             value={activeCompanies.length}
             icon={Building2}
-            bgColor="bg-emerald-500"
+            bgColor="bg-emerald-600"
             trend={`${companies.length} total targets`}
-          />
-          <StatsCards
-            title="Action Rate"
-            value={`${alerts.length > 0 ? Math.round((alerts.filter(a => a.status === 'actioned').length / alerts.length) * 100) : 0}%`}
-            icon={CheckCircle2}
-            bgColor="bg-purple-500"
-            trend="Alerts acted upon"
           />
         </div>
 
@@ -155,26 +148,26 @@ export default function Dashboard() {
               isLoading={companiesLoading}
             />
             
-            <Card className="bg-gradient-to-br from-slate-900 to-slate-800 text-white">
+            <Card className="bg-gradient-to-br from-emerald-700 to-emerald-800 text-white">
               <CardHeader>
                 <CardTitle className="text-lg">Automation Status</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Daily Monitoring</span>
-                  <Badge className="bg-emerald-500">07:30 GMT</Badge>
+                  <Badge className="bg-white text-emerald-800">07:30 GMT</Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Affinity Sync</span>
-                  <Badge className="bg-blue-500">Enabled</Badge>
+                  <Badge className="bg-white text-emerald-800">Enabled</Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Follow-up Tracking</span>
-                  <Badge className="bg-purple-500">48hr/5day</Badge>
+                  <Badge className="bg-white text-emerald-800">48hr/5day</Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Birthday Reminders</span>
-                  <Badge className="bg-amber-500">Active</Badge>
+                  <Badge className="bg-white text-emerald-800">Active</Badge>
                 </div>
               </CardContent>
             </Card>
