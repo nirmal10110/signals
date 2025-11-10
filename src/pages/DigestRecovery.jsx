@@ -150,20 +150,20 @@ export default function DigestRecoveryPage() {
     setSendingTo(ownerEmail);
     
     try {
-      console.log('Calling resendSingleDigest for:', ownerEmail);
+      console.log('🚀 Calling resendSingleDigest for:', ownerEmail);
       const response = await base44.functions.invoke('resendSingleDigest', {
         owner_email: ownerEmail
       });
-      console.log('Response:', response.data);
+      console.log('✅ Response:', response.data);
       
       if (response.data.success) {
-        toast.success(`Digest resent to ${ownerEmail}`);
+        toast.success(`✅ Digest resent to ${ownerEmail} (${response.data.alerts_sent} alerts)`);
       } else {
-        toast.error('Failed to resend: ' + (response.data.error || 'Unknown error'));
+        toast.error('❌ Failed to resend: ' + (response.data.error || 'Unknown error'));
       }
     } catch (error) {
-      console.error('Error calling resendSingleDigest:', error);
-      toast.error('Failed to resend: ' + error.message);
+      console.error('❌ Error calling resendSingleDigest:', error);
+      toast.error('❌ Failed to resend: ' + error.message);
     } finally {
       setSendingTo(null);
     }
@@ -173,19 +173,21 @@ export default function DigestRecoveryPage() {
     setSendingTo('all');
     
     try {
-      console.log('Calling resendRecentDigests...');
+      console.log('🚀 Calling resendRecentDigests...');
       const response = await base44.functions.invoke('resendRecentDigests');
-      console.log('Response:', response.data);
+      console.log('✅ Full response:', response);
+      console.log('✅ Response data:', response.data);
       const data = response.data;
       
       if (data.success) {
-        toast.success(`Successfully resent ${data.digests_resent} digest(s) with ${data.total_alerts_resent} alerts`);
+        toast.success(`✅ Resent ${data.digests_resent} digest(s) with ${data.total_alerts_resent} total alerts to: ${data.recipients.join(', ')}`);
       } else {
-        toast.error('Failed to resend: ' + (data.error || 'Unknown error'));
+        toast.error('❌ Failed: ' + (data.error || 'Unknown error'));
       }
     } catch (error) {
-      console.error('Error calling resendRecentDigests:', error);
-      toast.error('Failed to resend: ' + error.message);
+      console.error('❌ Error calling resendRecentDigests:', error);
+      console.error('❌ Error stack:', error.stack);
+      toast.error('❌ Error: ' + error.message);
     } finally {
       setSendingTo(null);
     }
@@ -256,7 +258,7 @@ export default function DigestRecoveryPage() {
           <AlertCircle className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-900">
             Showing digests sent in the last 7 days. Click on any team member to see their alerts, 
-            then use <strong>"Resend to [Name]"</strong> to send them their digest again.
+            then use <strong>"Resend to [Name]"</strong> to send them their digest again, or click <strong>"Resend All Digests"</strong> to send to everyone.
           </AlertDescription>
         </Alert>
 
