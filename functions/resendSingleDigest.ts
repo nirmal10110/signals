@@ -159,27 +159,22 @@ Deno.serve(async (req) => {
             }, { status: 403 });
         }
 
-        // Get alerts from last 7 days that were sent to this owner
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        
-        const allAlerts = await base44.asServiceRole.entities.Alert.filter({
-            status: 'new',
-            created_date: { $gte: sevenDaysAgo.toISOString() }
-        });
+        // Get ALL alerts (regardless of status) that were sent to this owner
+        // We'll look at the entire history, not just last 7 days
+        const allAlerts = await base44.asServiceRole.entities.Alert.list('-created_date');
 
         // Filter for alerts sent to this owner
         const ownerAlerts = allAlerts.filter(alert => 
             alert.sent_to && alert.sent_to.includes(owner_email)
         );
 
-        console.log(`📊 Found ${ownerAlerts.length} alerts sent to ${owner_email}`);
+        console.log(`📊 Found ${ownerAlerts.length} total alerts ever sent to ${owner_email}`);
 
         if (ownerAlerts.length === 0) {
             return Response.json({
                 success: true,
-                message: `No sent alerts found for ${owner_email} in the last 7 days`,
-                digests_sent: 0
+                message: `No sent alerts found for ${owner_email}`,
+                alerts_sent: 0
             });
         }
 
@@ -202,7 +197,7 @@ Deno.serve(async (req) => {
         const dateStr = format(new Date(), 'do MMMM yyyy');
         const htmlBody = generateDigestHTML(ownerName, dateStr, ownerAlerts, volpiContent);
 
-        console.log(`📤 Sending email to ${owner_email}...`);
+        console.log(`📤 Sending digest with ${ownerAlerts.length} alerts to ${owner_email}...`);
 
         // Send email
         await base44.asServiceRole.integrations.Core.SendEmail({
@@ -212,11 +207,10 @@ Deno.serve(async (req) => {
             from_name: 'Volpi Capital'
         });
 
-        console.log(`✅ Digest resent to ${owner_email}`);
+        console.log(`✅ Digest resent to ${owner_email} with ${ownerAlerts.length} alerts`);
 
         return Response.json({
             success: true,
-            digests_sent: 1,
             alerts_sent: ownerAlerts.length,
             owner: owner_email
         });
