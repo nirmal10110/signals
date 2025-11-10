@@ -25,24 +25,24 @@ Deno.serve(async (req) => {
 
         const alert = alerts[0];
 
-        // Check if already marked as sent to this owner
-        if (alert.sent_to && alert.sent_to.includes(owner_email)) {
+        // Check if already discarded for this owner
+        if (alert.discarded_for && alert.discarded_for.includes(owner_email)) {
             return Response.json({
                 success: true,
-                message: 'Alert already marked as sent to this owner',
+                message: 'Alert already discarded for this owner',
                 already_discarded: true
             });
         }
 
-        // Add owner email to sent_to array
-        const currentSentTo = alert.sent_to || [];
-        const updatedSentTo = [...new Set([...currentSentTo, owner_email])];
+        // Add owner email to discarded_for array
+        const currentDiscardedFor = alert.discarded_for || [];
+        const updatedDiscardedFor = [...new Set([...currentDiscardedFor, owner_email])];
 
         await base44.asServiceRole.entities.Alert.update(alert_id, {
-            sent_to: updatedSentTo
+            discarded_for: updatedDiscardedFor
         });
 
-        console.log(`✅ Marked alert ${alert_id} as sent to ${owner_email} (discarded)`);
+        console.log(`✅ Marked alert ${alert_id} as discarded for ${owner_email}`);
 
         return Response.json({
             success: true,

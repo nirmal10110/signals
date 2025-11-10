@@ -1,4 +1,3 @@
-
 import { createClientFromRequest } from 'npm:@base44/sdk@0.7.1';
 
 function isValidVolpiEmail(email) {
@@ -45,7 +44,7 @@ Deno.serve(async (req) => {
         
         console.log(`📊 Found ${allAlerts.length} total new alerts`);
         
-        // Filter by date AND whether already sent to this owner
+        // Filter by date AND whether already sent or discarded for this owner
         const recentAlerts = allAlerts.filter(alert => {
             const createdDate = new Date(alert.created_date);
             const detectedDate = alert.detected_date ? new Date(alert.detected_date) : null;
@@ -62,11 +61,16 @@ Deno.serve(async (req) => {
             if (alert.sent_to && alert.sent_to.includes(owner_email)) {
                 return false;
             }
+
+            // Skip if already discarded for this owner
+            if (alert.discarded_for && alert.discarded_for.includes(owner_email)) {
+                return false;
+            }
             
             return true;
         });
         
-        console.log(`📊 ${recentAlerts.length} unsent alerts from last 30 days`);
+        console.log(`📊 ${recentAlerts.length} unsent/undiscarded alerts from last 30 days`);
 
         if (recentAlerts.length === 0) {
             console.log(`ℹ️ No new unsent alerts for this owner`);
@@ -113,17 +117,17 @@ Deno.serve(async (req) => {
             });
         }
 
-        // Mark alerts as sent (add owner email to sent_to array) WITHOUT sending email
+        // Mark alerts as discarded (add owner email to discarded_for array) WITHOUT sending email
         for (const alert of alertsToDiscard) {
-            const currentSentTo = alert.sent_to || [];
-            const updatedSentTo = [...new Set([...currentSentTo, owner_email])];
+            const currentDiscardedFor = alert.discarded_for || [];
+            const updatedDiscardedFor = [...new Set([...currentDiscardedFor, owner_email])];
 
             await base44.asServiceRole.entities.Alert.update(alert.id, {
-                sent_to: updatedSentTo
+                discarded_for: updatedDiscardedFor
             });
         }
 
-        console.log(`✅ Marked ${alertsToDiscard.length} alerts as sent to ${owner_email} (discarded without sending)`);
+        console.log(`✅ Marked ${alertsToDiscard.length} alerts as discarded for ${owner_email}`);
 
         return Response.json({
             success: true,
