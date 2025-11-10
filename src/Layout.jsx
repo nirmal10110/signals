@@ -9,7 +9,8 @@ import {
   Settings,
   Search,
   Mail,
-  LifeBuoy
+  LifeBuoy,
+  History
 } from "lucide-react";
 import {
   Sidebar,
@@ -46,6 +47,11 @@ const monitoringItems = [
     title: "Digests",
     url: createPageUrl("Digests"),
     icon: Mail,
+  },
+  {
+    title: "Digest History",
+    url: createPageUrl("DigestHistory"),
+    icon: History,
   },
   {
     title: "Templates",
