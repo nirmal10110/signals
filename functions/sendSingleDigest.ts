@@ -34,7 +34,7 @@ function generateDigestHTML(ownerName, date, alerts, volpiContent) {
         const priorityBadge = `<span style="display: inline-block; ${priorityColors[alert.priority]} padding: 6px 12px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 6px;">${alert.priority}</span>`;
 
         const triggerLabel = alert.trigger_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-        const triggerBadge = `<span style="display: inline-block; background: #1a4d2e; color: white; padding: 6px 12px; border-radius: 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; margin-left: 6px;">${triggerLabel}</span>`;
+        const triggerBadge = `<span style="display: inline-block; background: #059669; color: white; padding: 6px 12px; border-radius: 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; margin-left: 6px;">${triggerLabel}</span>`;
 
         const relevantContent = (alert.volpi_content || [])
             .map(url => volpiContent.find(c => c.url === url))
@@ -49,7 +49,7 @@ function generateDigestHTML(ownerName, date, alerts, volpiContent) {
                 ${tierBadge}${priorityBadge}${triggerBadge}
             </div>
             
-            <h3 style="margin: 0 0 12px 0; font-size: 22px; font-weight: 700; color: #1a4d2e; line-height: 1.3;">${alert.company_name}</h3>
+            <h3 style="margin: 0 0 12px 0; font-size: 22px; font-weight: 700; color: #059669; line-height: 1.3;">${alert.company_name}</h3>
             <p style="margin: 0 0 16px 0; font-size: 16px; color: #374151; line-height: 1.5; font-weight: 500;">${alert.headline}</p>
             
             ${alert.summary ? `<p style="margin: 0 0 16px 0; font-size: 14px; color: #6b7280; line-height: 1.6;">${alert.summary}</p>` : ''}
@@ -61,14 +61,14 @@ function generateDigestHTML(ownerName, date, alerts, volpiContent) {
                 </div>
                 <div>
                     <span style="font-weight: 600; color: #374151;">Detected:</span> ${detectedDate}
-                    ${alert.source_url ? ` · <a href="${alert.source_url}" style="color: #1a4d2e; text-decoration: none; font-weight: 500;">View Source</a>` : ''}
+                    ${alert.source_url ? ` · <a href="${alert.source_url}" style="color: #059669; text-decoration: none; font-weight: 500;">View Source</a>` : ''}
                 </div>
             </div>
             
             ${alert.actionable_insight ? `
-            <div style="margin-bottom: 20px; padding: 20px; background: #f0fdf4; border-left: 3px solid #1a4d2e; border-radius: 4px;">
-                <p style="margin: 0 0 8px 0; font-size: 12px; font-weight: 700; color: #1a4d2e; text-transform: uppercase; letter-spacing: 0.5px;">💡 Actionable Insight</p>
-                <p style="margin: 0; font-size: 14px; color: #166534; line-height: 1.6;">${alert.actionable_insight}</p>
+            <div style="margin-bottom: 20px; padding: 20px; background: #f0fdf4; border-left: 3px solid #059669; border-radius: 4px;">
+                <p style="margin: 0 0 8px 0; font-size: 12px; font-weight: 700; color: #059669; text-transform: uppercase; letter-spacing: 0.5px;">💡 Actionable Insight</p>
+                <p style="margin: 0; font-size: 14px; color: #065f46; line-height: 1.6;">${alert.actionable_insight}</p>
             </div>
             ` : ''}
             
@@ -83,14 +83,14 @@ function generateDigestHTML(ownerName, date, alerts, volpiContent) {
             <div style="padding: 20px; background: #fafafa; border: 1px solid #e5e7eb; border-radius: 4px;">
                 <p style="margin: 0 0 12px 0; font-size: 12px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: 0.5px;">📚 Relevant Collateral</p>
                 <ul style="margin: 0; padding: 0; list-style: none;">
-                    ${relevantContent.map(c => `<li style="margin-bottom: 8px;"><a href="${c.url}" style="color: #1a4d2e; text-decoration: none; font-size: 14px; font-weight: 500;">→ ${c.title}</a></li>`).join('')}
+                    ${relevantContent.map(c => `<li style="margin-bottom: 8px;"><a href="${c.url}" style="color: #059669; text-decoration: none; font-size: 14px; font-weight: 500;">→ ${c.title}</a></li>`).join('')}
                 </ul>
-                <p style="margin: 12px 0 0 0;"><a href="https://volpicapital.com/news" style="color: #1a4d2e; text-decoration: none; font-size: 13px; font-weight: 600;">View more at volpicapital.com/news →</a></p>
+                <p style="margin: 12px 0 0 0;"><a href="https://volpicapital.com/news" style="color: #059669; text-decoration: none; font-size: 13px; font-weight: 600;">View more at volpicapital.com/news →</a></p>
             </div>
             ` : `
             <div style="padding: 20px; background: #fafafa; border: 1px solid #e5e7eb; border-radius: 4px;">
                 <p style="margin: 0 0 8px 0; font-size: 12px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: 0.5px;">📚 Relevant Collateral</p>
-                <p style="margin: 0;"><a href="https://volpicapital.com/news" style="color: #1a4d2e; text-decoration: none; font-size: 14px; font-weight: 500;">View our latest insights at volpicapital.com/news →</a></p>
+                <p style="margin: 0;"><a href="https://volpicapital.com/news" style="color: #059669; text-decoration: none; font-size: 14px; font-weight: 500;">View our latest insights at volpicapital.com/news →</a></p>
             </div>
             `}
         </div>
@@ -107,13 +107,15 @@ function generateDigestHTML(ownerName, date, alerts, volpiContent) {
             body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; }
             @media only screen and (max-width: 600px) {
                 .container { width: 100% !important; padding: 16px !important; }
+                .logo { max-width: 120px !important; }
             }
         </style>
     </head>
     <body style="background-color: #f9fafb; padding: 20px;">
         <div class="container" style="max-width: 700px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-            <div style="background: #1a4d2e; color: #ffffff; padding: 40px 32px; text-align: center;">
-                <h1 style="margin: 0 0 8px 0; font-size: 32px; font-weight: 700; letter-spacing: -0.5px;">Daily Intelligence Digest</h1>
+            <div style="background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #ffffff; padding: 40px 32px; text-align: center;">
+                <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68f5e8c214c862c9e823b068/21277dc16_volpi.png" alt="Volpi Capital" class="logo" style="max-width: 180px; height: auto; margin-bottom: 20px;" />
+                <h1 style="margin: 0 0 8px 0; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">Volpi Lens Intelligence Digest</h1>
                 <p style="margin: 0; font-size: 16px; color: #d1fae5; font-weight: 500;">${date}</p>
             </div>
             
@@ -124,10 +126,11 @@ function generateDigestHTML(ownerName, date, alerts, volpiContent) {
                 ${alertRows}
             </div>
             
-            <div style="background: #f9fafb; padding: 32px; text-align: center; border-top: 1px solid #e5e7eb;">
-                <p style="margin: 0 0 8px 0; font-size: 14px; color: #6b7280; font-weight: 600;">Volpi Capital Intelligence Platform</p>
-                <p style="margin: 0; font-size: 12px; color: #9ca3af;">Automated Private Equity Deal Origination</p>
-                <p style="margin: 12px 0 0 0;"><a href="https://volpicapital.com" style="color: #1a4d2e; text-decoration: none; font-size: 13px; font-weight: 600;">volpicapital.com</a></p>
+            <div style="background: #f0fdf4; padding: 32px; text-align: center; border-top: 1px solid #d1fae5;">
+                <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68f5e8c214c862c9e823b068/21277dc16_volpi.png" alt="Volpi Capital" style="max-width: 140px; height: auto; margin-bottom: 16px;" />
+                <p style="margin: 0 0 8px 0; font-size: 14px; color: #059669; font-weight: 700;">Volpi Capital</p>
+                <p style="margin: 0; font-size: 12px; color: #6b7280;">Private Equity Intelligence Platform</p>
+                <p style="margin: 12px 0 0 0;"><a href="https://volpicapital.com" style="color: #059669; text-decoration: none; font-size: 13px; font-weight: 600;">volpicapital.com</a></p>
             </div>
         </div>
     </body>
@@ -277,7 +280,7 @@ Deno.serve(async (req) => {
         // Use Base44 email service
         await base44.asServiceRole.integrations.Core.SendEmail({
             to: owner_email,
-            subject: `Your Daily Intelligence Digest — ${dateStr}`,
+            subject: `Your Volpi Lens Digest — ${dateStr}`,
             body: htmlBody,
             from_name: 'Volpi Capital'
         });
