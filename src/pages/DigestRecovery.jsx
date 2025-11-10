@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Link } from "react-router-dom";
+import { createPageUrl } from "@/utils";
 import { 
   RefreshCw, 
   CheckCircle2, 
@@ -13,7 +15,8 @@ import {
   Send,
   ExternalLink,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  ArrowRight
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -69,7 +72,7 @@ export default function DigestRecoveryPage() {
 
   // Process alerts to group by owner
   useEffect(() => {
-    console.log('🔍 Processing alerts...');
+    console.log('🔍 Processing alerts for recovery...');
     console.log('Total alerts:', alerts.length);
     
     // Get alerts from last 7 days that have been sent
@@ -83,32 +86,25 @@ export default function DigestRecoveryPage() {
       const isRecent = createdDate >= sevenDaysAgo;
       const isNew = alert.status === 'new';
       
-      console.log(`Alert ${alert.id}:`, {
-        company: alert.company_name,
-        created: createdDate,
-        hasSentTo,
-        sentToCount: alert.sent_to?.length || 0,
-        sentTo: alert.sent_to,
-        isRecent,
-        isNew
-      });
+      if (!hasSentTo) {
+        console.log(`Alert ${alert.company_name} has NOT been sent yet (sent_to is empty)`);
+      }
       
       return isNew && isRecent && hasSentTo;
     });
 
-    console.log('Sent alerts:', sentAlerts.length);
+    console.log('Sent alerts in last 7 days:', sentAlerts.length);
+    console.log('Unsent alerts:', alerts.filter(a => !a.sent_to || a.sent_to.length === 0).length);
 
     // Group by owner
     const grouped = {};
     
     for (const alert of sentAlerts) {
       const sentToEmails = alert.sent_to || [];
-      console.log(`Processing alert ${alert.id}, sent to:`, sentToEmails);
       
       for (const ownerEmail of sentToEmails) {
         // Only process volpi emails
         if (!ownerEmail.toLowerCase().endsWith('@volpicapital.com')) {
-          console.log('Skipping non-Volpi email:', ownerEmail);
           continue;
         }
 
@@ -142,6 +138,7 @@ export default function DigestRecoveryPage() {
     setDebugInfo({
       totalAlerts: alerts.length,
       sentAlerts: sentAlerts.length,
+      unsentAlerts: alerts.filter(a => !a.sent_to || a.sent_to.length === 0).length,
       ownersWithDigests: Object.keys(grouped).length
     });
   }, [alerts, companies]);
@@ -175,18 +172,16 @@ export default function DigestRecoveryPage() {
     try {
       console.log('🚀 Calling resendRecentDigests...');
       const response = await base44.functions.invoke('resendRecentDigests');
-      console.log('✅ Full response:', response);
-      console.log('✅ Response data:', response.data);
+      console.log('✅ Response:', response.data);
       const data = response.data;
       
       if (data.success) {
-        toast.success(`✅ Resent ${data.digests_resent} digest(s) with ${data.total_alerts_resent} total alerts to: ${data.recipients.join(', ')}`);
+        toast.success(`✅ Resent ${data.digests_resent} digest(s) with ${data.total_alerts_resent} total alerts`);
       } else {
         toast.error('❌ Failed: ' + (data.error || 'Unknown error'));
       }
     } catch (error) {
-      console.error('❌ Error calling resendRecentDigests:', error);
-      console.error('❌ Error stack:', error.stack);
+      console.error('❌ Error:', error);
       toast.error('❌ Error: ' + error.message);
     } finally {
       setSendingTo(null);
@@ -249,146 +244,175 @@ export default function DigestRecoveryPage() {
           <Alert className="bg-blue-50 border-blue-200 mb-6">
             <AlertCircle className="h-4 w-4 text-blue-600" />
             <AlertDescription className="text-blue-900">
-              <strong>Debug Info:</strong> {debugInfo.totalAlerts} total alerts, {debugInfo.sentAlerts} sent in last 7 days, {debugInfo.ownersWithDigests} owner(s) with digests
+              <strong>Status:</strong> {debugInfo.totalAlerts} total alerts • {debugInfo.sentAlerts} sent in last 7 days • {debugInfo.unsentAlerts} pending • {debugInfo.ownersWithDigests} owner(s) with sent digests
             </AlertDescription>
           </Alert>
         )}
 
-        <Alert className="bg-blue-50 border-blue-200 mb-6">
-          <AlertCircle className="h-4 w-4 text-blue-600" />
-          <AlertDescription className="text-blue-900">
-            Showing digests sent in the last 7 days. Click on any team member to see their alerts, 
-            then use <strong>"Resend to [Name]"</strong> to send them their digest again, or click <strong>"Resend All Digests"</strong> to send to everyone.
-          </AlertDescription>
-        </Alert>
-
         {ownersList.length === 0 ? (
           <Card className="bg-white border-slate-200">
             <CardContent className="p-12 text-center">
-              <Mail className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-              <p className="text-slate-600 mb-2">No sent digests found in the last 7 days.</p>
-              <p className="text-sm text-slate-500">Check the browser console for debug information.</p>
+              <Mail className="w-16 h-16 mx-auto mb-6 text-slate-300" />
+              <h2 className="text-2xl font-bold text-slate-900 mb-3">No Sent Digests Found</h2>
+              <p className="text-slate-600 mb-2">
+                {debugInfo?.unsentAlerts > 0 
+                  ? `You have ${debugInfo.unsentAlerts} unsent alert${debugInfo.unsentAlerts !== 1 ? 's' : ''} that haven't been sent yet.`
+                  : 'No alerts have been sent in the last 7 days.'}
+              </p>
+              <p className="text-sm text-slate-500 mb-8">
+                Digests need to be sent first before they can be recovered/resent here.
+              </p>
+              
+              <div className="flex gap-4 justify-center">
+                <Link to={createPageUrl("Digests")}>
+                  <Button className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                    <Send className="w-4 h-4 mr-2" />
+                    Go to Digests Page
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </Link>
+              </div>
+              
+              <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg text-left max-w-2xl mx-auto">
+                <p className="text-sm font-semibold text-blue-900 mb-2">💡 How Digest Recovery Works:</p>
+                <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+                  <li>Send digests from the <strong>Digests</strong> page</li>
+                  <li>Digests are tracked with recipient information</li>
+                  <li>Return here to resend any digest sent in the last 7 days</li>
+                  <li>Perfect for recovering failed emails or re-notifying team members</li>
+                </ol>
+              </div>
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-4">
-            {ownersList.map((owner) => {
-              const isExpanded = expandedOwner === owner.email;
-              const tier1Count = owner.alerts.filter(a => a.tier === 'tier_1').length;
+          <>
+            <Alert className="bg-emerald-50 border-emerald-200 mb-6">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              <AlertDescription className="text-emerald-900">
+                Showing digests sent in the last 7 days. Click on any team member to see their alerts, 
+                then use <strong>"Resend to [Name]"</strong> to send them their digest again, or click <strong>"Resend All Digests"</strong> to send to everyone.
+              </AlertDescription>
+            </Alert>
 
-              return (
-                <Card key={owner.email} className="bg-white border-slate-200">
-                  <CardHeader 
-                    className="border-b border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors"
-                    onClick={() => setExpandedOwner(isExpanded ? null : owner.email)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center">
-                          <Mail className="w-6 h-6 text-emerald-600" />
+            <div className="space-y-4">
+              {ownersList.map((owner) => {
+                const isExpanded = expandedOwner === owner.email;
+                const tier1Count = owner.alerts.filter(a => a.tier === 'tier_1').length;
+
+                return (
+                  <Card key={owner.email} className="bg-white border-slate-200">
+                    <CardHeader 
+                      className="border-b border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors"
+                      onClick={() => setExpandedOwner(isExpanded ? null : owner.email)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center">
+                            <Mail className="w-6 h-6 text-emerald-600" />
+                          </div>
+                          <div>
+                            <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                              {owner.name}
+                              {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                            </CardTitle>
+                            <p className="text-sm text-slate-500 mt-1">{owner.email}</p>
+                          </div>
                         </div>
-                        <div>
-                          <CardTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                            {owner.name}
-                            {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                          </CardTitle>
-                          <p className="text-sm text-slate-500 mt-1">{owner.email}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="text-right">
-                          <Badge className="bg-slate-100 text-slate-800 border-slate-200">
-                            {owner.alerts.length} alert{owner.alerts.length !== 1 ? 's' : ''}
-                          </Badge>
-                          {tier1Count > 0 && (
-                            <Badge className="bg-red-100 text-red-800 border-red-200 ml-2">
-                              {tier1Count} Tier 1
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <Badge className="bg-slate-100 text-slate-800 border-slate-200">
+                              {owner.alerts.length} alert{owner.alerts.length !== 1 ? 's' : ''}
                             </Badge>
-                          )}
+                            {tier1Count > 0 && (
+                              <Badge className="bg-red-100 text-red-800 border-red-200 ml-2">
+                                {tier1Count} Tier 1
+                              </Badge>
+                            )}
+                          </div>
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleResendSingle(owner.email);
+                            }}
+                            disabled={sendingTo !== null}
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                          >
+                            {sendingTo === owner.email ? (
+                              <>
+                                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                                Sending...
+                              </>
+                            ) : (
+                              <>
+                                <Send className="w-4 h-4 mr-2" />
+                                Resend to {owner.name.split(' ')[0]}
+                              </>
+                            )}
+                          </Button>
                         </div>
-                        <Button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleResendSingle(owner.email);
-                          }}
-                          disabled={sendingTo !== null}
-                          size="sm"
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                        >
-                          {sendingTo === owner.email ? (
-                            <>
-                              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                              Sending...
-                            </>
-                          ) : (
-                            <>
-                              <Send className="w-4 h-4 mr-2" />
-                              Resend to {owner.name.split(' ')[0]}
-                            </>
-                          )}
-                        </Button>
                       </div>
-                    </div>
-                  </CardHeader>
-                  
-                  {isExpanded && (
-                    <CardContent className="p-6">
-                      <div className="space-y-4">
-                        {owner.alerts.map((alert) => (
-                          <Card key={alert.id} className="bg-slate-50 border-slate-200">
-                            <CardContent className="p-4">
-                              <div className="flex items-start gap-2 mb-3 flex-wrap">
-                                {alert.tier === 'tier_1' && (
-                                  <Badge className="bg-red-100 text-red-800 border-red-200 font-bold">
-                                    TIER 1
+                    </CardHeader>
+                    
+                    {isExpanded && (
+                      <CardContent className="p-6">
+                        <div className="space-y-4">
+                          {owner.alerts.map((alert) => (
+                            <Card key={alert.id} className="bg-slate-50 border-slate-200">
+                              <CardContent className="p-4">
+                                <div className="flex items-start gap-2 mb-3 flex-wrap">
+                                  {alert.tier === 'tier_1' && (
+                                    <Badge className="bg-red-100 text-red-800 border-red-200 font-bold">
+                                      TIER 1
+                                    </Badge>
+                                  )}
+                                  <Badge className={priorityColors[alert.priority]}>
+                                    {alert.priority?.toUpperCase()}
                                   </Badge>
-                                )}
-                                <Badge className={priorityColors[alert.priority]}>
-                                  {alert.priority?.toUpperCase()}
-                                </Badge>
-                                <Badge variant="outline" className="bg-white">
-                                  {triggerLabels[alert.trigger_type]}
-                                </Badge>
-                              </div>
-                              
-                              <h3 className="text-lg font-bold text-slate-900 mb-2">{alert.company_name}</h3>
-                              <p className="text-sm text-slate-700 mb-3">{alert.headline}</p>
-                              
-                              {alert.summary && (
-                                <p className="text-sm text-slate-600 mb-3">{alert.summary}</p>
-                              )}
-
-                              <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
-                                <span>📅 {format(new Date(alert.detected_date || alert.created_date), "MMM d, yyyy")}</span>
-                                {alert.source_url && (
-                                  <a
-                                    href={alert.source_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="flex items-center gap-1 text-emerald-600 hover:text-emerald-800"
-                                  >
-                                    Source
-                                    <ExternalLink className="w-3 h-3" />
-                                  </a>
-                                )}
-                              </div>
-
-                              {alert.actionable_insight && (
-                                <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
-                                  <p className="text-xs font-semibold text-emerald-900 mb-1">💡 Actionable Insight</p>
-                                  <p className="text-xs text-emerald-800">{alert.actionable_insight}</p>
+                                  <Badge variant="outline" className="bg-white">
+                                    {triggerLabels[alert.trigger_type]}
+                                  </Badge>
                                 </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    </CardContent>
-                  )}
-                </Card>
-              );
-            })}
-          </div>
+                                
+                                <h3 className="text-lg font-bold text-slate-900 mb-2">{alert.company_name}</h3>
+                                <p className="text-sm text-slate-700 mb-3">{alert.headline}</p>
+                                
+                                {alert.summary && (
+                                  <p className="text-sm text-slate-600 mb-3">{alert.summary}</p>
+                                )}
+
+                                <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
+                                  <span>📅 {format(new Date(alert.detected_date || alert.created_date), "MMM d, yyyy")}</span>
+                                  {alert.source_url && (
+                                    <a
+                                      href={alert.source_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex items-center gap-1 text-emerald-600 hover:text-emerald-800"
+                                    >
+                                      Source
+                                      <ExternalLink className="w-3 h-3" />
+                                    </a>
+                                  )}
+                                </div>
+
+                                {alert.actionable_insight && (
+                                  <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                                    <p className="text-xs font-semibold text-emerald-900 mb-1">💡 Actionable Insight</p>
+                                    <p className="text-xs text-emerald-800">{alert.actionable_insight}</p>
+                                  </div>
+                                )}
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </CardContent>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     </div>
