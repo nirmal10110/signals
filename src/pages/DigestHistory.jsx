@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { base44 } from "@/api/base44Client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,10 +21,12 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronUp,
-  Eye,
-  Trash2
+  Trash2,
+  CheckSquare,
+  Square,
+  Loader2
 } from "lucide-react";
-import { format, formatDistanceToNow, isSameDay } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 
 const triggerLabels = {
@@ -66,6 +68,11 @@ export default function DigestHistoryPage() {
   const [dateRange, setDateRange] = useState("all");
   const [expandedDigest, setExpandedDigest] = useState(null);
   const [sendingTo, setSendingTo] = useState(null);
+  const [selectedAlerts, setSelectedAlerts] = useState({});
+  const [isBulkDiscarding, setIsBulkDiscarding] = useState(false);
+  const [discardingAlert, setDiscardingAlert] = useState(null);
+  
+  const queryClient = useQueryClient();
 
   const { data: alerts = [], isLoading: alertsLoading } = useQuery({
     queryKey: ['alerts'],
@@ -113,7 +120,7 @@ export default function DigestHistoryPage() {
             id: digestKey,
             recipientEmail,
             recipientName: ownersLookup[recipientEmail] || recipientEmail.split('@')[0],
-            sendDate: alert.created_date, // Use first alert's date as send date
+            sendDate: alert.created_date,
             alerts: [],
             totalAlerts: 0,
             tier1Count: 0,
@@ -216,7 +223,127 @@ export default function DigestHistoryPage() {
     return filtered;
   }, [digestSends, searchQuery, selectedOwner, dateRange]);
 
+  const toggleAlertSelection = (digestId, alertId) => {
+    setSelectedAlerts(prev => {
+      const digestSelections = new Set(prev[digestId] || []);
+      
+      if (digestSelections.has(alertId)) {
+        digestSelections.delete(alertId);
+      } else {
+        digestSelections.add(alertId);
+      }
+      
+      return {
+        ...prev,
+        [digestId]: digestSelections
+      };
+    });
+  };
+
+  const toggleAllAlertsForDigest = (digestId, alertIds) => {
+    setSelectedAlerts(prev => {
+      const digestSelections = new Set(prev[digestId] || []);
+      const allSelected = alertIds.every(id => digestSelections.has(id));
+      
+      if (allSelected) {
+        return {
+          ...prev,
+          [digestId]: new Set()
+        };
+      } else {
+        return {
+          ...prev,
+          [digestId]: new Set(alertIds)
+        };
+      }
+    });
+  };
+
+  const handleBulkDiscard = async (digest) => {
+    const selected = selectedAlerts[digest.id];
+    if (!selected || selected.size === 0) {
+      toast.error('No alerts selected');
+      return;
+    }
+
+    if (!confirm(`⚠️ Remove ${selected.size} selected alert${selected.size !== 1 ? 's' : ''} from ${digest.recipientName}'s sent digest?\n\nThis will remove them from sent_to so they won't appear in digest history.`)) {
+      return;
+    }
+
+    setIsBulkDiscarding(true);
+    
+    try {
+      // Remove owner from sent_to for each selected alert
+      for (const alertId of selected) {
+        const alert = alerts.find(a => a.id === alertId);
+        if (!alert) continue;
+
+        const currentSentTo = alert.sent_to || [];
+        const updatedSentTo = currentSentTo.filter(email => email !== digest.recipientEmail);
+
+        await base44.entities.Alert.update(alertId, {
+          sent_to: updatedSentTo
+        });
+      }
+
+      toast.success(`Removed ${selected.size} alerts from digest history`);
+      
+      setSelectedAlerts(prev => ({
+        ...prev,
+        [digest.id]: new Set()
+      }));
+      
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+    } catch (error) {
+      toast.error(`Failed to remove alerts: ${error.message}`);
+    } finally {
+      setIsBulkDiscarding(false);
+    }
+  };
+
+  const handleDiscardSingleAlert = async (alertId, digest) => {
+    if (!confirm(`⚠️ Remove this alert from ${digest.recipientName}'s sent digest?\n\nIt will no longer appear in their digest history.`)) {
+      return;
+    }
+
+    setDiscardingAlert(alertId);
+    
+    try {
+      const alert = alerts.find(a => a.id === alertId);
+      if (!alert) {
+        toast.error('Alert not found');
+        return;
+      }
+
+      const currentSentTo = alert.sent_to || [];
+      const updatedSentTo = currentSentTo.filter(email => email !== digest.recipientEmail);
+
+      await base44.entities.Alert.update(alertId, {
+        sent_to: updatedSentTo
+      });
+
+      toast.success(`Alert removed from digest history`);
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+    } catch (error) {
+      toast.error(`Failed to remove alert: ${error.message}`);
+    } finally {
+      setDiscardingAlert(null);
+    }
+  };
+
   const handleResendDigest = async (digest) => {
+    // Filter out any selected alerts before resending
+    const selected = selectedAlerts[digest.id] || new Set();
+    
+    if (selected.size > 0) {
+      if (!confirm(`⚠️ You have ${selected.size} alert${selected.size !== 1 ? 's' : ''} selected.\n\nDo you want to remove them before resending?\n\n• Click OK to remove selected alerts first\n• Click Cancel to resend everything (ignore selection)`)) {
+        // User chose to ignore selection and resend everything
+      } else {
+        // Remove selected alerts first
+        await handleBulkDiscard(digest);
+      }
+    }
+
     setSendingTo(digest.id);
     
     try {
@@ -393,6 +520,9 @@ export default function DigestHistoryPage() {
           <div className="space-y-4">
             {filteredDigests.map((digest) => {
               const isExpanded = expandedDigest === digest.id;
+              const digestSelections = selectedAlerts[digest.id] || new Set();
+              const hasSelections = digestSelections.size > 0;
+              const allSelected = digest.alerts.length > 0 && digest.alerts.every(alert => digestSelections.has(alert.id));
 
               return (
                 <Card key={digest.id} className="bg-white border-slate-200">
@@ -436,6 +566,11 @@ export default function DigestHistoryPage() {
                                 {digest.dismissedCount} dismissed
                               </Badge>
                             )}
+                            {hasSelections && (
+                              <Badge className="bg-purple-100 text-purple-800 border-purple-200">
+                                {digestSelections.size} selected
+                              </Badge>
+                            )}
                           </div>
                           
                           <div className="flex items-center gap-4 text-xs text-slate-500">
@@ -446,6 +581,31 @@ export default function DigestHistoryPage() {
                       </div>
                       
                       <div className="flex items-center gap-2 flex-shrink-0">
+                        {hasSelections && (
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleBulkDiscard(digest);
+                            }}
+                            disabled={isBulkDiscarding || sendingTo !== null}
+                            size="sm"
+                            variant="outline"
+                            className="bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100"
+                          >
+                            {isBulkDiscarding ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Removing...
+                              </>
+                            ) : (
+                              <>
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Remove Selected ({digestSelections.size})
+                              </>
+                            )}
+                          </Button>
+                        )}
+                        
                         <Button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -491,6 +651,32 @@ export default function DigestHistoryPage() {
                           )}
                         </div>
                       </div>
+
+                      <div className="mb-4 flex items-center gap-3 pb-4 border-b border-slate-200">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => toggleAllAlertsForDigest(digest.id, digest.alerts.map(a => a.id))}
+                          className="bg-white"
+                        >
+                          {allSelected ? (
+                            <>
+                              <CheckSquare className="w-4 h-4 mr-2" />
+                              Deselect All
+                            </>
+                          ) : (
+                            <>
+                              <Square className="w-4 h-4 mr-2" />
+                              Select All
+                            </>
+                          )}
+                        </Button>
+                        {hasSelections && (
+                          <span className="text-sm text-slate-600">
+                            {digestSelections.size} of {digest.alerts.length} selected
+                          </span>
+                        )}
+                      </div>
                       
                       <h4 className="text-sm font-semibold text-slate-900 mb-3">📋 Alerts in This Digest:</h4>
                       <div className="space-y-3">
@@ -500,60 +686,96 @@ export default function DigestHistoryPage() {
                             if (a.tier !== 'tier_1' && b.tier === 'tier_1') return 1;
                             return 0;
                           })
-                          .map((alert) => (
-                          <Card key={alert.id} className="bg-slate-50 border-slate-200">
-                            <CardContent className="p-4">
-                              <div className="flex items-start gap-2 mb-2 flex-wrap">
-                                {alert.tier === 'tier_1' && (
-                                  <Badge className="bg-red-100 text-red-800 border-red-200 font-bold">
-                                    TIER 1
-                                  </Badge>
-                                )}
-                                <Badge className={priorityColors[alert.priority]}>
-                                  {alert.priority?.toUpperCase()}
-                                </Badge>
-                                <Badge variant="outline" className="bg-white">
-                                  {triggerLabels[alert.trigger_type]}
-                                </Badge>
-                                {alert.status === 'dismissed' && (
-                                  <Badge variant="outline" className="bg-slate-100 text-slate-600">
-                                    <Trash2 className="w-3 h-3 mr-1" />
-                                    Dismissed
-                                  </Badge>
-                                )}
-                              </div>
-                              
-                              <h5 className="text-md font-bold text-slate-900 mb-1">{alert.company_name}</h5>
-                              <p className="text-sm text-slate-700 mb-2">{alert.headline}</p>
-                              
-                              {alert.summary && (
-                                <p className="text-xs text-slate-600 mb-2">{alert.summary}</p>
-                              )}
+                          .map((alert) => {
+                            const isSelected = digestSelections.has(alert.id);
+                            
+                            return (
+                              <Card key={alert.id} className={`border-slate-200 transition-all ${isSelected ? 'bg-purple-50 border-purple-300' : 'bg-slate-50'}`}>
+                                <CardContent className="p-4">
+                                  <div className="flex items-start gap-4">
+                                    <button
+                                      onClick={() => toggleAlertSelection(digest.id, alert.id)}
+                                      className="mt-1 text-slate-400 hover:text-purple-600 transition-colors"
+                                    >
+                                      {isSelected ? (
+                                        <CheckSquare className="w-5 h-5 text-purple-600" />
+                                      ) : (
+                                        <Square className="w-5 h-5" />
+                                      )}
+                                    </button>
+                                    
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                        {alert.tier === 'tier_1' && (
+                                          <Badge className="bg-red-100 text-red-800 border-red-200 font-bold">
+                                            TIER 1
+                                          </Badge>
+                                        )}
+                                        <Badge className={priorityColors[alert.priority]}>
+                                          {alert.priority?.toUpperCase()}
+                                        </Badge>
+                                        <Badge variant="outline" className="bg-white">
+                                          {triggerLabels[alert.trigger_type]}
+                                        </Badge>
+                                        {alert.status === 'dismissed' && (
+                                          <Badge variant="outline" className="bg-slate-100 text-slate-600">
+                                            <Trash2 className="w-3 h-3 mr-1" />
+                                            Dismissed
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      
+                                      <h5 className="text-md font-bold text-slate-900 mb-1">{alert.company_name}</h5>
+                                      <p className="text-sm text-slate-700 mb-2">{alert.headline}</p>
+                                      
+                                      {alert.summary && (
+                                        <p className="text-xs text-slate-600 mb-2">{alert.summary}</p>
+                                      )}
 
-                              {alert.actionable_insight && (
-                                <div className="mt-2 p-2 bg-emerald-50 border border-emerald-200 rounded">
-                                  <p className="text-xs font-semibold text-emerald-900">💡 Actionable Insight</p>
-                                  <p className="text-xs text-emerald-800 mt-1">{alert.actionable_insight}</p>
-                                </div>
-                              )}
-                              
-                              <div className="flex items-center gap-4 text-xs text-slate-500 mt-2">
-                                <span>📅 {format(new Date(alert.detected_date || alert.created_date), "MMM d, yyyy")}</span>
-                                {alert.source_url && (
-                                  <a
-                                    href={alert.source_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="flex items-center gap-1 text-emerald-600 hover:text-emerald-800"
-                                  >
-                                    Source
-                                    <ExternalLink className="w-3 h-3" />
-                                  </a>
-                                )}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))}
+                                      {alert.actionable_insight && (
+                                        <div className="mt-2 p-2 bg-emerald-50 border border-emerald-200 rounded">
+                                          <p className="text-xs font-semibold text-emerald-900">💡 Actionable Insight</p>
+                                          <p className="text-xs text-emerald-800 mt-1">{alert.actionable_insight}</p>
+                                        </div>
+                                      )}
+                                      
+                                      <div className="flex items-center gap-4 text-xs text-slate-500 mt-2">
+                                        <span>📅 {format(new Date(alert.detected_date || alert.created_date), "MMM d, yyyy")}</span>
+                                        {alert.source_url && (
+                                          <a
+                                            href={alert.source_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-1 text-emerald-600 hover:text-emerald-800"
+                                          >
+                                            Source
+                                            <ExternalLink className="w-3 h-3" />
+                                          </a>
+                                        )}
+                                      </div>
+                                    </div>
+                                    
+                                    <Button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDiscardSingleAlert(alert.id, digest);
+                                      }}
+                                      disabled={discardingAlert === alert.id}
+                                      size="sm"
+                                      variant="ghost"
+                                      className="text-slate-400 hover:text-red-600 hover:bg-red-50"
+                                    >
+                                      {discardingAlert === alert.id ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="w-4 h-4" />
+                                      )}
+                                    </Button>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            );
+                          })}
                       </div>
                     </CardContent>
                   )}
