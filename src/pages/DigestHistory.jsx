@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from "react";
 import { base44 } from "@/api/base44Client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -121,6 +122,7 @@ export default function DigestHistoryPage() {
             recipientEmail,
             recipientName: ownersLookup[recipientEmail] || recipientEmail.split('@')[0],
             sendDate: alert.created_date,
+            batchDate: alert.created_date, // Store for passing to resend function
             alerts: [],
             totalAlerts: 0,
             tier1Count: 0,
@@ -341,15 +343,18 @@ export default function DigestHistoryPage() {
       } else {
         // Remove selected alerts first
         await handleBulkDiscard(digest);
+        // Wait a moment for the updates to propagate
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
 
     setSendingTo(digest.id);
     
     try {
-      console.log('🔄 Resending entire digest to:', digest.recipientEmail);
+      console.log('🔄 Resending specific digest batch to:', digest.recipientEmail, 'from date:', digest.batchDate);
       const response = await base44.functions.invoke('resendSingleDigest', {
-        owner_email: digest.recipientEmail
+        owner_email: digest.recipientEmail,
+        batch_date: digest.batchDate // Pass the specific batch date
       });
       
       if (response.data.success) {

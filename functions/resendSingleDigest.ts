@@ -7,7 +7,6 @@ function isValidVolpiEmail(email) {
 }
 
 function generateDigestHTML(ownerName, date, alerts, volpiContent) {
-    // Sort alerts: TIER 1 first, then TIER 2, then by date within each tier
     const sortedAlerts = [...alerts].sort((a, b) => {
         if (a.tier === 'tier_1' && b.tier !== 'tier_1') return -1;
         if (a.tier !== 'tier_1' && b.tier === 'tier_1') return 1;
@@ -137,9 +136,9 @@ Deno.serve(async (req) => {
             return Response.json({ error: 'Unauthorized - Admin only' }, { status: 401 });
         }
 
-        const { owner_email } = await req.json();
+        const { owner_email, batch_date } = await req.json();
         
-        console.log(`📧 Resending digest to: ${owner_email}`);
+        console.log(`📧 Resending digest to: ${owner_email}${batch_date ? ` for batch: ${batch_date}` : ''}`);
         
         if (!owner_email) {
             return Response.json({ error: 'owner_email required' }, { status: 400 });
@@ -172,25 +171,49 @@ Deno.serve(async (req) => {
             });
         }
 
-        // Find the most recent batch (alerts sent on the same day)
-        // Group alerts by date
-        const alertsByDate = {};
-        ownerAlerts.forEach(alert => {
-            const alertDate = new Date(alert.created_date);
-            const dateKey = `${alertDate.getFullYear()}-${alertDate.getMonth()}-${alertDate.getDate()}`;
+        let batchAlerts;
+
+        if (batch_date) {
+            // User is resending a SPECIFIC digest batch from Digest History
+            const targetDate = new Date(batch_date);
+            const targetDateKey = `${targetDate.getFullYear()}-${targetDate.getMonth()}-${targetDate.getDate()}`;
             
-            if (!alertsByDate[dateKey]) {
-                alertsByDate[dateKey] = [];
-            }
-            alertsByDate[dateKey].push(alert);
-        });
+            console.log(`🎯 Looking for specific batch: ${targetDateKey}`);
+            
+            batchAlerts = ownerAlerts.filter(alert => {
+                const alertDate = new Date(alert.created_date);
+                const alertDateKey = `${alertDate.getFullYear()}-${alertDate.getMonth()}-${alertDate.getDate()}`;
+                return alertDateKey === targetDateKey;
+            });
 
-        // Get the most recent batch (most recent date with alerts)
-        const dates = Object.keys(alertsByDate).sort().reverse();
-        const mostRecentDate = dates[0];
-        const latestBatchAlerts = alertsByDate[mostRecentDate];
+            console.log(`📦 Found ${batchAlerts.length} alerts in this specific batch`);
+        } else {
+            // No specific batch - use most recent batch (legacy behavior)
+            const alertsByDate = {};
+            ownerAlerts.forEach(alert => {
+                const alertDate = new Date(alert.created_date);
+                const dateKey = `${alertDate.getFullYear()}-${alertDate.getMonth()}-${alertDate.getDate()}`;
+                
+                if (!alertsByDate[dateKey]) {
+                    alertsByDate[dateKey] = [];
+                }
+                alertsByDate[dateKey].push(alert);
+            });
 
-        console.log(`📦 Most recent batch: ${latestBatchAlerts.length} alerts from ${mostRecentDate}`);
+            const dates = Object.keys(alertsByDate).sort().reverse();
+            const mostRecentDate = dates[0];
+            batchAlerts = alertsByDate[mostRecentDate];
+
+            console.log(`📦 Using most recent batch: ${mostRecentDate} with ${batchAlerts.length} alerts`);
+        }
+
+        if (batchAlerts.length === 0) {
+            return Response.json({
+                success: true,
+                message: `No alerts found in the specified batch`,
+                alerts_sent: 0
+            });
+        }
 
         // Get companies to find owner name
         const companies = await base44.asServiceRole.entities.Company.list();
@@ -209,9 +232,9 @@ Deno.serve(async (req) => {
         const volpiContent = await base44.asServiceRole.entities.VolpiContent.list();
 
         const dateStr = format(new Date(), 'do MMMM yyyy');
-        const htmlBody = generateDigestHTML(ownerName, dateStr, latestBatchAlerts, volpiContent);
+        const htmlBody = generateDigestHTML(ownerName, dateStr, batchAlerts, volpiContent);
 
-        console.log(`📤 Sending digest with ${latestBatchAlerts.length} alerts to ${owner_email}...`);
+        console.log(`📤 Sending digest with ${batchAlerts.length} alerts to ${owner_email}...`);
 
         // Send email
         await base44.asServiceRole.integrations.Core.SendEmail({
@@ -221,12 +244,13 @@ Deno.serve(async (req) => {
             from_name: 'Volpi Capital'
         });
 
-        console.log(`✅ Digest resent to ${owner_email} with ${latestBatchAlerts.length} alerts`);
+        console.log(`✅ Digest resent to ${owner_email} with ${batchAlerts.length} alerts`);
 
         return Response.json({
             success: true,
-            alerts_sent: latestBatchAlerts.length,
-            owner: owner_email
+            alerts_sent: batchAlerts.length,
+            owner: owner_email,
+            batch_date: batch_date || 'most recent'
         });
 
     } catch (error) {
