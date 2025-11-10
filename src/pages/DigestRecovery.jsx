@@ -55,8 +55,9 @@ export default function DigestRecoveryPage() {
   const [sendingTo, setSendingTo] = useState(null);
   const [expandedOwner, setExpandedOwner] = useState(null);
   const [alertsByOwner, setAlertsByOwner] = useState({});
+  const [debugInfo, setDebugInfo] = useState(null);
 
-  const { data: alerts = [], isLoading: alertsLoading } = useQuery({
+  const { data: alerts = [], isLoading: alertsLoading, error: alertsError } = useQuery({
     queryKey: ['alerts'],
     queryFn: () => base44.entities.Alert.list('-created_date'),
   });
@@ -68,29 +69,48 @@ export default function DigestRecoveryPage() {
 
   // Process alerts to group by owner
   useEffect(() => {
+    console.log('🔍 Processing alerts...');
+    console.log('Total alerts:', alerts.length);
+    
     // Get alerts from last 7 days that have been sent
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    console.log('7 days ago:', sevenDaysAgo);
 
     const sentAlerts = alerts.filter(alert => {
       const createdDate = new Date(alert.created_date);
-      return (
-        alert.status === 'new' &&
-        createdDate >= sevenDaysAgo &&
-        alert.sent_to &&
-        alert.sent_to.length > 0
-      );
+      const hasSentTo = alert.sent_to && alert.sent_to.length > 0;
+      const isRecent = createdDate >= sevenDaysAgo;
+      const isNew = alert.status === 'new';
+      
+      console.log(`Alert ${alert.id}:`, {
+        company: alert.company_name,
+        created: createdDate,
+        hasSentTo,
+        sentToCount: alert.sent_to?.length || 0,
+        sentTo: alert.sent_to,
+        isRecent,
+        isNew
+      });
+      
+      return isNew && isRecent && hasSentTo;
     });
+
+    console.log('Sent alerts:', sentAlerts.length);
 
     // Group by owner
     const grouped = {};
     
     for (const alert of sentAlerts) {
       const sentToEmails = alert.sent_to || [];
+      console.log(`Processing alert ${alert.id}, sent to:`, sentToEmails);
       
       for (const ownerEmail of sentToEmails) {
         // Only process volpi emails
-        if (!ownerEmail.toLowerCase().endsWith('@volpicapital.com')) continue;
+        if (!ownerEmail.toLowerCase().endsWith('@volpicapital.com')) {
+          console.log('Skipping non-Volpi email:', ownerEmail);
+          continue;
+        }
 
         if (!grouped[ownerEmail]) {
           grouped[ownerEmail] = {
@@ -103,6 +123,8 @@ export default function DigestRecoveryPage() {
         grouped[ownerEmail].alerts.push(alert);
       }
     }
+
+    console.log('Grouped by owner:', Object.keys(grouped).length, 'owners');
 
     // Get proper names from companies
     for (const [ownerEmail, data] of Object.entries(grouped)) {
@@ -117,15 +139,22 @@ export default function DigestRecoveryPage() {
     }
 
     setAlertsByOwner(grouped);
+    setDebugInfo({
+      totalAlerts: alerts.length,
+      sentAlerts: sentAlerts.length,
+      ownersWithDigests: Object.keys(grouped).length
+    });
   }, [alerts, companies]);
 
   const handleResendSingle = async (ownerEmail) => {
     setSendingTo(ownerEmail);
     
     try {
+      console.log('Calling resendSingleDigest for:', ownerEmail);
       const response = await base44.functions.invoke('resendSingleDigest', {
         owner_email: ownerEmail
       });
+      console.log('Response:', response.data);
       
       if (response.data.success) {
         toast.success(`Digest resent to ${ownerEmail}`);
@@ -133,6 +162,7 @@ export default function DigestRecoveryPage() {
         toast.error('Failed to resend: ' + (response.data.error || 'Unknown error'));
       }
     } catch (error) {
+      console.error('Error calling resendSingleDigest:', error);
       toast.error('Failed to resend: ' + error.message);
     } finally {
       setSendingTo(null);
@@ -143,7 +173,9 @@ export default function DigestRecoveryPage() {
     setSendingTo('all');
     
     try {
+      console.log('Calling resendRecentDigests...');
       const response = await base44.functions.invoke('resendRecentDigests');
+      console.log('Response:', response.data);
       const data = response.data;
       
       if (data.success) {
@@ -152,6 +184,7 @@ export default function DigestRecoveryPage() {
         toast.error('Failed to resend: ' + (data.error || 'Unknown error'));
       }
     } catch (error) {
+      console.error('Error calling resendRecentDigests:', error);
       toast.error('Failed to resend: ' + error.message);
     } finally {
       setSendingTo(null);
@@ -164,6 +197,19 @@ export default function DigestRecoveryPage() {
     return (
       <div className="min-h-screen bg-slate-50 p-6 flex items-center justify-center">
         <RefreshCw className="w-8 h-8 animate-spin text-emerald-600" />
+      </div>
+    );
+  }
+
+  if (alertsError) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-6">
+        <Alert className="bg-red-50 border-red-200">
+          <AlertCircle className="h-4 w-4 text-red-600" />
+          <AlertDescription className="text-red-900">
+            Error loading alerts: {alertsError.message}
+          </AlertDescription>
+        </Alert>
       </div>
     );
   }
@@ -197,6 +243,15 @@ export default function DigestRecoveryPage() {
           )}
         </div>
 
+        {debugInfo && (
+          <Alert className="bg-blue-50 border-blue-200 mb-6">
+            <AlertCircle className="h-4 w-4 text-blue-600" />
+            <AlertDescription className="text-blue-900">
+              <strong>Debug Info:</strong> {debugInfo.totalAlerts} total alerts, {debugInfo.sentAlerts} sent in last 7 days, {debugInfo.ownersWithDigests} owner(s) with digests
+            </AlertDescription>
+          </Alert>
+        )}
+
         <Alert className="bg-blue-50 border-blue-200 mb-6">
           <AlertCircle className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-900">
@@ -209,7 +264,8 @@ export default function DigestRecoveryPage() {
           <Card className="bg-white border-slate-200">
             <CardContent className="p-12 text-center">
               <Mail className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-              <p className="text-slate-600">No sent digests found in the last 7 days.</p>
+              <p className="text-slate-600 mb-2">No sent digests found in the last 7 days.</p>
+              <p className="text-sm text-slate-500">Check the browser console for debug information.</p>
             </CardContent>
           </Card>
         ) : (
@@ -217,7 +273,6 @@ export default function DigestRecoveryPage() {
             {ownersList.map((owner) => {
               const isExpanded = expandedOwner === owner.email;
               const tier1Count = owner.alerts.filter(a => a.tier === 'tier_1').length;
-              const tier2Count = owner.alerts.filter(a => a.tier === 'tier_2').length;
 
               return (
                 <Card key={owner.email} className="bg-white border-slate-200">
@@ -280,14 +335,14 @@ export default function DigestRecoveryPage() {
                         {owner.alerts.map((alert) => (
                           <Card key={alert.id} className="bg-slate-50 border-slate-200">
                             <CardContent className="p-4">
-                              <div className="flex items-start gap-2 mb-3">
+                              <div className="flex items-start gap-2 mb-3 flex-wrap">
                                 {alert.tier === 'tier_1' && (
                                   <Badge className="bg-red-100 text-red-800 border-red-200 font-bold">
-                                    TIER 1 - MUST FOLLOW UP
+                                    TIER 1
                                   </Badge>
                                 )}
                                 <Badge className={priorityColors[alert.priority]}>
-                                  {alert.priority.toUpperCase()}
+                                  {alert.priority?.toUpperCase()}
                                 </Badge>
                                 <Badge variant="outline" className="bg-white">
                                   {triggerLabels[alert.trigger_type]}
@@ -302,7 +357,7 @@ export default function DigestRecoveryPage() {
                               )}
 
                               <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
-                                <span>📅 Published: {format(new Date(alert.detected_date || alert.created_date), "MMM d, yyyy")}</span>
+                                <span>📅 {format(new Date(alert.detected_date || alert.created_date), "MMM d, yyyy")}</span>
                                 {alert.source_url && (
                                   <a
                                     href={alert.source_url}
@@ -310,7 +365,7 @@ export default function DigestRecoveryPage() {
                                     rel="noopener noreferrer"
                                     className="flex items-center gap-1 text-emerald-600 hover:text-emerald-800"
                                   >
-                                    View Source
+                                    Source
                                     <ExternalLink className="w-3 h-3" />
                                   </a>
                                 )}
