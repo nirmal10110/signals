@@ -10,6 +10,7 @@ import ResearchLibrary from './pages/ResearchLibrary';
 import EmailGuidelines from './pages/EmailGuidelines';
 import Settings from './pages/Settings';
 import DigestRecovery from './pages/DigestRecovery';
+import DigestHistory from './pages/DigestHistory';
 import Layout from './Layout.jsx';
 
 
@@ -26,6 +27,7 @@ export const PAGES = {
     "EmailGuidelines": EmailGuidelines,
     "Settings": Settings,
     "DigestRecovery": DigestRecovery,
+    "DigestHistory": DigestHistory,
 }
 
 export const pagesConfig = {
