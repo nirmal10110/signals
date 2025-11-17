@@ -6,6 +6,25 @@ function isValidVolpiEmail(email) {
     return email.toLowerCase().endsWith('@volpicapital.com');
 }
 
+// Tier 1 triggers that should create follow-up tasks in Affinity
+const TIER_1_TASK_TRIGGERS = new Set([
+    'ceo_hiring',
+    'cfo_hiring',
+    'head_of_sales_hiring',
+    'head_of_delivery_hiring',
+    'executive_hiring',
+    'board_member_hired',
+    'headcount_growth',
+    'financial_results',
+    'funding_round',
+    'acquisition_announced',
+    'international_expansion',
+    'new_office_opened',
+    'culture_initiative',
+    'birthday_reminder',
+    'event_participation'
+]);
+
 async function pushAlertToAffinity(alert, ownerEmail) {
     const affinityApiKey = Deno.env.get("Affinity_API");
     if (!affinityApiKey) {
@@ -76,8 +95,8 @@ Alert sent to: ${ownerEmail}
             console.log(`⚠️ Failed to add note to Affinity for ${alert.company_name}`);
         }
 
-        // If Tier 1, create a task
-        if (alert.tier === 'tier_1') {
+        // Create task only for Tier 1 trigger types
+        if (TIER_1_TASK_TRIGGERS.has(alert.trigger_type)) {
             const dueDate = new Date();
             dueDate.setDate(dueDate.getDate() + 3); // Due in 3 days
 
@@ -98,7 +117,7 @@ Alert sent to: ${ownerEmail}
             );
 
             if (taskResponse.ok) {
-                console.log(`✅ Created Tier 1 task in Affinity for ${alert.company_name}`);
+                console.log(`✅ Created Tier 1 task in Affinity for ${alert.company_name} (${alert.trigger_type})`);
             } else {
                 console.log(`⚠️ Failed to create task in Affinity for ${alert.company_name}`);
             }
@@ -383,7 +402,7 @@ Deno.serve(async (req) => {
                     from_name: 'Volpi Capital'
                 });
 
-                // Push alerts to Affinity CRM
+                // Push alerts to Affinity CRM (only for sent digest alerts)
                 for (const alert of allAlertsForOwner) {
                     await pushAlertToAffinity(alert, ownerEmail);
                 }
