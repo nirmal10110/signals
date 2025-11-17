@@ -6,8 +6,110 @@ function isValidVolpiEmail(email) {
     return email.toLowerCase().endsWith('@volpicapital.com');
 }
 
+async function pushAlertToAffinity(alert, ownerEmail) {
+    const affinityApiKey = Deno.env.get("Affinity_API");
+    if (!affinityApiKey) {
+        console.log('⚠️ Affinity API key not set, skipping CRM push');
+        return;
+    }
+
+    try {
+        // Find the organization in Affinity by company name
+        const searchResponse = await fetch(
+            `https://api.affinity.co/organizations?term=${encodeURIComponent(alert.company_name)}`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${affinityApiKey}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        if (!searchResponse.ok) {
+            console.log(`⚠️ Failed to search Affinity for ${alert.company_name}`);
+            return;
+        }
+
+        const searchData = await searchResponse.json();
+        
+        if (!searchData.organizations || searchData.organizations.length === 0) {
+            console.log(`⚠️ Company ${alert.company_name} not found in Affinity`);
+            return;
+        }
+
+        const organizationId = searchData.organizations[0].id;
+        console.log(`✅ Found ${alert.company_name} in Affinity (ID: ${organizationId})`);
+
+        // Create note content
+        const noteContent = `
+🔔 Volpi Lens Alert: ${alert.headline}
+
+${alert.summary || ''}
+
+📅 Detected: ${format(new Date(alert.detected_date || alert.created_date), "MMM d, yyyy")}
+🔗 Source: ${alert.source_url || 'N/A'}
+
+${alert.actionable_insight ? `💡 Actionable Insight: ${alert.actionable_insight}` : ''}
+
+Alert sent to: ${ownerEmail}
+`.trim();
+
+        // Add note to organization
+        const noteResponse = await fetch(
+            'https://api.affinity.co/notes',
+            {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${affinityApiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    organization_ids: [organizationId],
+                    content: noteContent
+                })
+            }
+        );
+
+        if (noteResponse.ok) {
+            console.log(`✅ Added note to Affinity for ${alert.company_name}`);
+        } else {
+            console.log(`⚠️ Failed to add note to Affinity for ${alert.company_name}`);
+        }
+
+        // If Tier 1, create a task
+        if (alert.tier === 'tier_1') {
+            const dueDate = new Date();
+            dueDate.setDate(dueDate.getDate() + 3); // Due in 3 days
+
+            const taskResponse = await fetch(
+                'https://api.affinity.co/tasks',
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${affinityApiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        organization_ids: [organizationId],
+                        content: `Follow up on: ${alert.headline}`,
+                        due_date: dueDate.toISOString().split('T')[0]
+                    })
+                }
+            );
+
+            if (taskResponse.ok) {
+                console.log(`✅ Created Tier 1 task in Affinity for ${alert.company_name}`);
+            } else {
+                console.log(`⚠️ Failed to create task in Affinity for ${alert.company_name}`);
+            }
+        }
+
+    } catch (error) {
+        console.error(`❌ Error pushing alert to Affinity for ${alert.company_name}:`, error.message);
+    }
+}
+
 function generateDigestHTML(ownerName, date, alerts, volpiContent) {
-    // Sort alerts: TIER 1 first, then TIER 2, then by date within each tier
     const sortedAlerts = [...alerts].sort((a, b) => {
         if (a.tier === 'tier_1' && b.tier !== 'tier_1') return -1;
         if (a.tier !== 'tier_1' && b.tier === 'tier_1') return 1;
@@ -196,6 +298,11 @@ Deno.serve(async (req) => {
                     console.log(`  ⏭️ Already sent to ${owner.email}`);
                     continue;
                 }
+
+                if (alert.discarded_for && alert.discarded_for.includes(owner.email)) {
+                    console.log(`  ⏭️ Discarded for ${owner.email}`);
+                    continue;
+                }
                 
                 console.log(`  ✓ Queuing for ${owner.email} (${digestFrequency})`);
                 
@@ -276,6 +383,11 @@ Deno.serve(async (req) => {
                     from_name: 'Volpi Capital'
                 });
 
+                // Push alerts to Affinity CRM
+                for (const alert of allAlertsForOwner) {
+                    await pushAlertToAffinity(alert, ownerEmail);
+                }
+
                 for (const alert of allAlertsForOwner) {
                     const currentSentTo = alert.sent_to || [];
                     const updatedSentTo = [...new Set([...currentSentTo, ownerEmail])];
@@ -291,7 +403,7 @@ Deno.serve(async (req) => {
                     status: 'sent'
                 });
 
-                console.log(`✅ Sent ${digestType} digest to ${ownerEmail} with ${allAlertsForOwner.length} alerts and marked them as sent`);
+                console.log(`✅ Sent ${digestType} digest to ${ownerEmail} with ${allAlertsForOwner.length} alerts and pushed to Affinity`);
 
             } catch (error) {
                 console.error(`❌ Failed to send digest to ${ownerEmail}:`, error.message);
