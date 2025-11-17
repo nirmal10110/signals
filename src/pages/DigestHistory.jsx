@@ -122,7 +122,7 @@ export default function DigestHistoryPage() {
             recipientEmail,
             recipientName: ownersLookup[recipientEmail] || recipientEmail.split('@')[0],
             sendDate: alert.created_date,
-            batchDate: alert.created_date, // Store for passing to resend function
+            batchDate: alert.created_date,
             alerts: [],
             totalAlerts: 0,
             tier1Count: 0,
@@ -268,35 +268,32 @@ export default function DigestHistoryPage() {
       return;
     }
 
-    if (!confirm(`⚠️ Remove ${selected.size} selected alert${selected.size !== 1 ? 's' : ''} from ${digest.recipientName}'s sent digest?\n\nThis will remove them from sent_to so they won't appear in digest history.`)) {
+    if (!confirm(`⚠️ Remove ${selected.size} selected alert${selected.size !== 1 ? 's' : ''} from ${digest.recipientName}'s sent digest?\n\nThis will remove them from digest history.`)) {
       return;
     }
 
     setIsBulkDiscarding(true);
     
     try {
-      // Remove owner from sent_to for each selected alert
-      for (const alertId of selected) {
-        const alert = alerts.find(a => a.id === alertId);
-        if (!alert) continue;
+      const response = await base44.functions.invoke('bulkRemoveAlertsFromDigest', {
+        alert_ids: Array.from(selected),
+        owner_email: digest.recipientEmail
+      });
 
-        const currentSentTo = alert.sent_to || [];
-        const updatedSentTo = currentSentTo.filter(email => email !== digest.recipientEmail);
-
-        await base44.entities.Alert.update(alertId, {
-          sent_to: updatedSentTo
-        });
+      if (response.data.success) {
+        toast.success(`Removed ${response.data.alerts_processed} alerts from digest history`);
+        
+        setSelectedAlerts(prev => ({
+          ...prev,
+          [digest.id]: new Set()
+        }));
+        
+        queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      } else {
+        toast.error('Failed to remove alerts');
       }
-
-      toast.success(`Removed ${selected.size} alerts from digest history`);
-      
-      setSelectedAlerts(prev => ({
-        ...prev,
-        [digest.id]: new Set()
-      }));
-      
-      queryClient.invalidateQueries({ queryKey: ['alerts'] });
     } catch (error) {
+      console.error('Error removing alerts:', error);
       toast.error(`Failed to remove alerts: ${error.message}`);
     } finally {
       setIsBulkDiscarding(false);
@@ -311,22 +308,19 @@ export default function DigestHistoryPage() {
     setDiscardingAlert(alertId);
     
     try {
-      const alert = alerts.find(a => a.id === alertId);
-      if (!alert) {
-        toast.error('Alert not found');
-        return;
-      }
-
-      const currentSentTo = alert.sent_to || [];
-      const updatedSentTo = currentSentTo.filter(email => email !== digest.recipientEmail);
-
-      await base44.entities.Alert.update(alertId, {
-        sent_to: updatedSentTo
+      const response = await base44.functions.invoke('removeAlertFromDigest', {
+        alert_id: alertId,
+        owner_email: digest.recipientEmail
       });
 
-      toast.success(`Alert removed from digest history`);
-      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      if (response.data.success) {
+        toast.success(`Alert removed from digest history`);
+        queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      } else {
+        toast.error('Failed to remove alert');
+      }
     } catch (error) {
+      console.error('Error removing alert:', error);
       toast.error(`Failed to remove alert: ${error.message}`);
     } finally {
       setDiscardingAlert(null);
@@ -354,7 +348,7 @@ export default function DigestHistoryPage() {
       console.log('🔄 Resending specific digest batch to:', digest.recipientEmail, 'from date:', digest.batchDate);
       const response = await base44.functions.invoke('resendSingleDigest', {
         owner_email: digest.recipientEmail,
-        batch_date: digest.batchDate // Pass the specific batch date
+        batch_date: digest.batchDate
       });
       
       if (response.data.success) {
