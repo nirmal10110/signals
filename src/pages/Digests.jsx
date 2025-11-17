@@ -348,7 +348,7 @@ export default function DigestsPage() {
       return;
     }
 
-    if (!confirm(`⚠️ Discard ${selected.size} selected alert${selected.size !== 1 ? 's' : ''} for ${ownerEmail}?\n\nThey will be marked as sent WITHOUT sending an email.`)) {
+    if (!confirm(`⚠️ Discard ${selected.size} selected alert${selected.size !== 1 ? 's' : ''} for ${ownerEmail}?\n\nThey will be marked as discarded and won't appear in future digests.`)) {
       return;
     }
 
@@ -375,7 +375,7 @@ export default function DigestsPage() {
   };
 
   const handleDiscardDigest = async (ownerEmail) => {
-    if (!confirm(`⚠️ Discard digest for ${ownerEmail}?\n\nThis will mark all alerts as sent WITHOUT sending an email. These alerts will not appear in future digests.`)) {
+    if (!confirm(`⚠️ Discard digest for ${ownerEmail}?\n\nThis will mark all alerts as discarded. These alerts will not appear in future digests.`)) {
       return;
     }
 
@@ -406,7 +406,7 @@ export default function DigestsPage() {
         alert_id: alertId,
         owner_email: ownerEmail 
       });
-      toast.success(`Alert removed from digest`);
+      toast.success(`Alert discarded`);
       queryClient.invalidateQueries({ queryKey: ['alerts'] });
     } catch (error) {
       toast.error(`Failed to discard alert: ${error.message}`);
@@ -425,7 +425,13 @@ export default function DigestsPage() {
     for (const owner of owners) {
       if (!owner.email) continue;
       
+      // Skip if already sent to this owner
       if (alert.sent_to && alert.sent_to.includes(owner.email)) {
+        continue;
+      }
+      
+      // Skip if already discarded for this owner
+      if (alert.discarded_for && alert.discarded_for.includes(owner.email)) {
         continue;
       }
       
