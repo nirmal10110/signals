@@ -11,7 +11,7 @@ Deno.serve(async (req) => {
 
         const { alert_id, owner_email } = await req.json();
         
-        console.log(`🗑️ Discarding single alert ${alert_id} for: ${owner_email}`);
+        console.log(`🗑️ Discarding alert ${alert_id} globally (triggered by: ${owner_email})`);
         
         if (!alert_id || !owner_email) {
             return Response.json({ error: 'alert_id and owner_email required' }, { status: 400 });
@@ -25,34 +25,47 @@ Deno.serve(async (req) => {
 
         const alert = alerts[0];
 
-        // Check if already discarded for this owner
-        if (alert.discarded_for && alert.discarded_for.includes(owner_email)) {
-            return Response.json({
-                success: true,
-                message: 'Alert already discarded for this owner',
-                already_discarded: true
-            });
+        // Get the company to find ALL owners
+        const companies = await base44.asServiceRole.entities.Company.filter({ id: alert.company_id });
+        const company = companies[0];
+        
+        // Collect ALL owner emails for this company
+        const allOwnerEmails = [];
+        if (company && company.relationship_owners) {
+            for (const owner of company.relationship_owners) {
+                if (owner.email) {
+                    allOwnerEmails.push(owner.email);
+                }
+            }
+        }
+        
+        // Always include the requesting owner
+        if (!allOwnerEmails.includes(owner_email)) {
+            allOwnerEmails.push(owner_email);
         }
 
-        // Add owner email to discarded_for array
+        console.log(`📋 Found ${allOwnerEmails.length} owner(s) for ${alert.company_name}: ${allOwnerEmails.join(', ')}`);
+
+        // Merge with existing discarded_for to discard for ALL owners
         const currentDiscardedFor = alert.discarded_for || [];
-        const updatedDiscardedFor = [...new Set([...currentDiscardedFor, owner_email])];
+        const updatedDiscardedFor = [...new Set([...currentDiscardedFor, ...allOwnerEmails])];
 
         await base44.asServiceRole.entities.Alert.update(alert_id, {
             discarded_for: updatedDiscardedFor
         });
 
-        console.log(`✅ Marked alert ${alert_id} as discarded for ${owner_email}`);
+        console.log(`✅ Alert ${alert_id} discarded for ALL ${updatedDiscardedFor.length} owner(s)`);
 
         return Response.json({
             success: true,
-            message: 'Alert discarded successfully',
+            message: `Alert discarded for all ${allOwnerEmails.length} owner(s) of ${alert.company_name}`,
             alert_id: alert_id,
-            owner: owner_email
+            discarded_for: updatedDiscardedFor,
+            owners_affected: allOwnerEmails
         });
 
     } catch (error) {
-        console.error('❌ Discard single alert error:', error);
+        console.error('❌ Discard alert error:', error);
         return Response.json({ 
             error: error.message,
             stack: error.stack 

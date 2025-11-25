@@ -24,15 +24,15 @@ function extractYearFromUrl(url) {
     return yearMatch ? parseInt(yearMatch[1]) : null;
 }
 
-// NEW: Verify source URL actually exists and fetch content
-async function verifySourceUrl(url) {
+// Verify source URL and extract actual publication date from the page
+async function verifyAndExtractDate(url, claimedDate) {
     try {
-        console.log(`    🔗 Verifying source URL: ${url}`);
+        console.log(`    🔗 Fetching article: ${url}`);
         const response = await fetch(url, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             },
-            signal: AbortSignal.timeout(8000)
+            signal: AbortSignal.timeout(10000)
         });
         
         if (!response.ok) {
@@ -42,22 +42,205 @@ async function verifySourceUrl(url) {
         
         const html = await response.text();
         
-        // Extract text content for validation
+        // Extract text content
         const textContent = html
             .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
             .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
             .replace(/<[^>]+>/g, ' ')
             .replace(/\s+/g, ' ')
-            .trim()
-            .substring(0, 5000);
+            .trim();
         
         if (textContent.length < 100) {
             console.log(`    ❌ Source has insufficient content (${textContent.length} chars)`);
             return { valid: false, reason: 'Insufficient content' };
         }
+
+        console.log(`    ✅ Page fetched (${textContent.length} chars)`);
         
-        console.log(`    ✅ Source verified (${textContent.length} chars)`);
-        return { valid: true, content: textContent };
+        // THOROUGH DATE EXTRACTION from the actual page
+        let extractedDate = null;
+        let dateEvidence = null;
+        
+        // 1. Check for HTML datetime attributes (most reliable)
+        const datetimeMatch = html.match(/<time[^>]*datetime=["']([^"']+)["'][^>]*>/i);
+        if (datetimeMatch) {
+            const dt = new Date(datetimeMatch[1]);
+            if (!isNaN(dt.getTime())) {
+                extractedDate = dt.toISOString().split('T')[0];
+                dateEvidence = `HTML <time datetime="${datetimeMatch[1]}">`;
+                console.log(`    📅 Found datetime attribute: ${extractedDate}`);
+            }
+        }
+        
+        // 2. Check meta tags for article dates
+        if (!extractedDate) {
+            const metaPatterns = [
+                /property=["']article:published_time["'][^>]*content=["']([^"']+)["']/i,
+                /content=["']([^"']+)["'][^>]*property=["']article:published_time["']/i,
+                /name=["']date["'][^>]*content=["']([^"']+)["']/i,
+                /name=["']pubdate["'][^>]*content=["']([^"']+)["']/i,
+                /name=["']publish-date["'][^>]*content=["']([^"']+)["']/i,
+                /itemprop=["']datePublished["'][^>]*content=["']([^"']+)["']/i,
+            ];
+            
+            for (const pattern of metaPatterns) {
+                const match = html.match(pattern);
+                if (match) {
+                    const dt = new Date(match[1]);
+                    if (!isNaN(dt.getTime())) {
+                        extractedDate = dt.toISOString().split('T')[0];
+                        dateEvidence = `Meta tag: ${match[1]}`;
+                        console.log(`    📅 Found meta date: ${extractedDate}`);
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // 3. Check JSON-LD structured data
+        if (!extractedDate) {
+            const jsonLdMatch = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i);
+            if (jsonLdMatch) {
+                try {
+                    const jsonLd = JSON.parse(jsonLdMatch[1]);
+                    const dateFields = ['datePublished', 'dateCreated', 'publishedDate'];
+                    for (const field of dateFields) {
+                        if (jsonLd[field]) {
+                            const dt = new Date(jsonLd[field]);
+                            if (!isNaN(dt.getTime())) {
+                                extractedDate = dt.toISOString().split('T')[0];
+                                dateEvidence = `JSON-LD ${field}: ${jsonLd[field]}`;
+                                console.log(`    📅 Found JSON-LD date: ${extractedDate}`);
+                                break;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // JSON parse failed, continue
+                }
+            }
+        }
+        
+        // 4. Search text content for date patterns
+        if (!extractedDate) {
+            const months = 'January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec';
+            const textDatePatterns = [
+                // "Published: January 15, 2025" or "Posted on January 15, 2025"
+                new RegExp(`(?:Published|Posted|Date|Updated|Written)[:\\s]+(?:on\\s+)?(\\d{1,2})\\s+(${months})\\s+(\\d{4})`, 'i'),
+                new RegExp(`(?:Published|Posted|Date|Updated|Written)[:\\s]+(?:on\\s+)?(${months})\\s+(\\d{1,2}),?\\s+(\\d{4})`, 'i'),
+                // "15 January 2025" or "January 15, 2025" standalone
+                new RegExp(`(\\d{1,2})(?:st|nd|rd|th)?\\s+(${months})\\s+(\\d{4})`, 'i'),
+                new RegExp(`(${months})\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})`, 'i'),
+                // ISO format in text "2025-01-15"
+                /(\d{4})-(\d{2})-(\d{2})/,
+                // European format "15/01/2025" or "15.01.2025"
+                /(\d{1,2})[\/\.](\d{1,2})[\/\.](\d{4})/,
+            ];
+            
+            for (const pattern of textDatePatterns) {
+                const match = textContent.match(pattern);
+                if (match) {
+                    let parsedDate = null;
+                    const matchStr = match[0];
+                    
+                    // Try parsing different formats
+                    const testDate = new Date(matchStr);
+                    if (!isNaN(testDate.getTime()) && testDate.getFullYear() >= 2020) {
+                        parsedDate = testDate;
+                    }
+                    
+                    if (parsedDate) {
+                        extractedDate = parsedDate.toISOString().split('T')[0];
+                        dateEvidence = `Text: "${matchStr}"`;
+                        console.log(`    📅 Found text date: ${extractedDate} from "${matchStr}"`);
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // 5. Check URL for date patterns
+        if (!extractedDate) {
+            const urlDateMatch = url.match(/\/(\d{4})\/(\d{2})\/(\d{2})\//);
+            if (urlDateMatch) {
+                extractedDate = `${urlDateMatch[1]}-${urlDateMatch[2]}-${urlDateMatch[3]}`;
+                dateEvidence = `URL path: /${urlDateMatch[1]}/${urlDateMatch[2]}/${urlDateMatch[3]}/`;
+                console.log(`    📅 Found URL date: ${extractedDate}`);
+            } else {
+                const urlYearMonth = url.match(/\/(\d{4})\/(\d{2})\//);
+                if (urlYearMonth) {
+                    extractedDate = `${urlYearMonth[1]}-${urlYearMonth[2]}-15`; // Assume mid-month
+                    dateEvidence = `URL path: /${urlYearMonth[1]}/${urlYearMonth[2]}/ (day estimated)`;
+                    console.log(`    📅 Found URL year/month: ${extractedDate}`);
+                }
+            }
+        }
+        
+        // Validate extracted date
+        if (extractedDate) {
+            const extractedYear = new Date(extractedDate).getFullYear();
+            
+            // STRICT: Must be 2025 or later
+            if (extractedYear < 2025) {
+                console.log(`    ❌ Extracted date ${extractedDate} is from ${extractedYear} - TOO OLD`);
+                return { 
+                    valid: false, 
+                    reason: `Article is from ${extractedYear}, not recent enough`,
+                    extractedDate,
+                    dateEvidence
+                };
+            }
+            
+            // Check if within 30 days
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            const articleDate = new Date(extractedDate);
+            
+            if (articleDate < thirtyDaysAgo) {
+                console.log(`    ❌ Article date ${extractedDate} is older than 30 days`);
+                return { 
+                    valid: false, 
+                    reason: `Article is from ${extractedDate}, more than 30 days old`,
+                    extractedDate,
+                    dateEvidence
+                };
+            }
+            
+            console.log(`    ✅ Date verified: ${extractedDate} (${dateEvidence})`);
+            return { 
+                valid: true, 
+                content: textContent.substring(0, 5000),
+                extractedDate,
+                dateEvidence
+            };
+        }
+        
+        // No date found - be cautious
+        console.log(`    ⚠️ Could not extract date from page - checking URL...`);
+        
+        // Last resort: Check URL for old years
+        const urlYearCheck = url.match(/\/(\d{4})\//);
+        if (urlYearCheck && parseInt(urlYearCheck[1]) < 2025) {
+            console.log(`    ❌ URL contains old year ${urlYearCheck[1]}`);
+            return { valid: false, reason: `URL contains old year ${urlYearCheck[1]}` };
+        }
+        
+        // If claimed date is reasonable (2025+), cautiously accept
+        if (claimedDate) {
+            const claimedYear = new Date(claimedDate).getFullYear();
+            if (claimedYear >= 2025) {
+                console.log(`    ⚠️ Using LLM claimed date ${claimedDate} - unable to verify from page`);
+                return { 
+                    valid: true, 
+                    content: textContent.substring(0, 5000),
+                    extractedDate: claimedDate,
+                    dateEvidence: 'Unable to verify from page - using LLM claimed date',
+                    uncertain: true
+                };
+            }
+        }
+        
+        return { valid: false, reason: 'Could not verify publication date' };
         
     } catch (error) {
         console.log(`    ❌ Source verification error: ${error.message}`);
@@ -272,55 +455,42 @@ Return "news_items" array with 0-3 REAL items.`;
                     console.log(`  Evidence: ${item.date_evidence}`);
                     console.log(`  Source URL: ${item.source_url}`);
                     
-                    // CRITICAL: Verify source URL actually exists
-                    const urlVerification = await verifySourceUrl(item.source_url);
-                    if (!urlVerification.valid) {
-                        console.log(`  ❌ REJECTED: Source URL verification failed (${urlVerification.reason})`);
-                        console.log(`  ⚠️ WARNING: LLM may have hallucinated this news - URL doesn't exist or is inaccessible`);
-                        continue;
-                    }
-                    
-                    // Require high confidence
-                    if (item.date_confidence !== 'high') {
-                        console.log(`  ❌ REJECTED: Date confidence is not HIGH (got: ${item.date_confidence})`);
-                        continue;
-                    }
-
-                    // Validate URL format
+                    // Validate URL format first
                     if (!item.source_url || !(item.source_url.startsWith('http://') || item.source_url.startsWith('https://'))) {
                         console.log(`  ❌ REJECTED: Invalid or missing URL`);
                         continue;
                     }
 
-                    // Validate date format
-                    if (!isValidDate(item.date_published)) {
-                        console.log(`  ❌ REJECTED: Invalid date format`);
+                    // CRITICAL: Fetch article and extract actual publication date
+                    const verification = await verifyAndExtractDate(item.source_url, item.date_published);
+                    if (!verification.valid) {
+                        console.log(`  ❌ REJECTED: ${verification.reason}`);
+                        continue;
+                    }
+                    
+                    // Use the date we extracted from the actual page (not LLM claimed date)
+                    const verifiedDate = verification.extractedDate || item.date_published;
+                    const verifiedDateEvidence = verification.dateEvidence || item.date_evidence;
+                    
+                    // If we couldn't verify date and it's uncertain, skip
+                    if (verification.uncertain && item.date_confidence !== 'high') {
+                        console.log(`  ❌ REJECTED: Could not verify date and LLM confidence is not high`);
                         continue;
                     }
 
-                    // Check if date is within 30-day window
-                    if (!isWithin30Days(item.date_published, cutoffDate)) {
-                        console.log(`  ❌ REJECTED: Outside 30-day window`);
-                        continue;
-                    }
-
-                    // Year validation - must be 2025+
-                    const publishedDate = new Date(item.date_published);
+                    // Final year check on verified date
+                    const publishedDate = new Date(verifiedDate);
                     const publishedYear = publishedDate.getFullYear();
                     
                     if (publishedYear < 2025) {
-                        console.log(`  ❌ REJECTED: Date is from ${publishedYear}, must be 2025 or later`);
+                        console.log(`  ❌ REJECTED: Verified date is from ${publishedYear}, must be 2025 or later`);
                         continue;
                     }
 
-                    // URL year cross-validation
-                    const urlYear = extractYearFromUrl(item.source_url);
-                    if (urlYear && urlYear < 2024) {
-                        console.log(`  ❌ REJECTED: URL contains old year ${urlYear}`);
+                    // Check within 30-day window
+                    if (!isWithin30Days(verifiedDate, cutoffDate)) {
+                        console.log(`  ❌ REJECTED: Verified date ${verifiedDate} is outside 30-day window`);
                         continue;
-                    }
-                    if (urlYear && Math.abs(urlYear - publishedYear) > 1) {
-                        console.log(`  ⚠️ WARNING: URL year ${urlYear} doesn't match published year ${publishedYear}, but within tolerance`);
                     }
 
                     // ENHANCED DUPLICATE CHECK
@@ -344,7 +514,7 @@ Return "news_items" array with 0-3 REAL items.`;
                         continue;
                     }
 
-                    // Create alert
+                    // Create alert with VERIFIED date from actual page
                     const alertData = {
                         company_id: company.id,
                         company_name: company.name,
@@ -352,24 +522,24 @@ Return "news_items" array with 0-3 REAL items.`;
                         headline: item.headline.substring(0, 100),
                         summary: item.summary,
                         source_url: item.source_url,
-                        detected_date: item.date_published,
-                        date_evidence: item.date_evidence,
-                        date_needs_review: false,
+                        detected_date: verifiedDate, // Use date extracted from page
+                        date_evidence: verifiedDateEvidence, // Use evidence from page
+                        date_needs_review: verification.uncertain || false,
                         tier: item.tier,
                         priority: item.tier === 'tier_1' ? 'high' : 'medium',
                         status: 'new',
                         email_sent: false,
                         sent_to: [],
-                        confidence_score: 95 // Higher confidence since URL was verified
+                        confidence_score: verification.uncertain ? 80 : 95
                     };
 
                     const alert = await base44.asServiceRole.entities.Alert.create(alertData);
                     alertsCreated.push(alert);
                     
-                    console.log(`  ✅ CREATED: Alert saved with verified source (ID: ${alert.id.substring(0, 8)}...)`);
-                    console.log(`  📅 Published: ${item.date_published} (Year: ${publishedYear})`);
-                    console.log(`  📌 Evidence: ${item.date_evidence}`);
-                    console.log(`  🔗 Verified URL: ${item.source_url}`);
+                    console.log(`  ✅ CREATED: Alert saved with verified date (ID: ${alert.id.substring(0, 8)}...)`);
+                    console.log(`  📅 Verified Date: ${verifiedDate} (Year: ${publishedYear})`);
+                    console.log(`  📌 Evidence: ${verifiedDateEvidence}`);
+                    console.log(`  🔗 Source: ${item.source_url}`);
                 }
 
                 // Update last_monitored

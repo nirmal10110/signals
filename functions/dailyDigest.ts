@@ -266,7 +266,7 @@ function generateDigestHTML(ownerName, date, alerts, volpiContent) {
             <div style="background: linear-gradient(135deg, #047857 0%, #065f46 100%); padding: 48px 40px; text-align: center;">
                 <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68f5e8c214c862c9e823b068/21277dc16_volpi.png" alt="Volpi Capital" class="logo" style="max-width: 180px; height: auto; margin-bottom: 24px; filter: brightness(0) invert(1);" />
                 <h1 style="margin: 0 0 8px 0; font-size: 28px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px; line-height: 1.2;">Volpi Lens Intelligence Digest</h1>
-                <p style="margin: 0; font-size: 16px; color: #d1fae5; font-weight: 500; letter-spacing: 0.3px;">${date}</p>
+                <p style="margin: 0; font-size: 16px; color: #ffffff; font-weight: 600; letter-spacing: 0.3px;">${date}</p>
             </div>
             
             <!-- Main Content -->
