@@ -16,7 +16,8 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronUp,
-  ArrowRight
+  ArrowRight,
+  Loader2
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -59,6 +60,7 @@ export default function DigestRecoveryPage() {
   const [expandedOwner, setExpandedOwner] = useState(null);
   const [alertsByOwner, setAlertsByOwner] = useState({});
   const [debugInfo, setDebugInfo] = useState(null);
+  const [isBackfilling, setIsBackfilling] = useState(false);
 
   const { data: alerts = [], isLoading: alertsLoading, error: alertsError } = useQuery({
     queryKey: ['alerts'],
@@ -188,6 +190,33 @@ export default function DigestRecoveryPage() {
     }
   };
 
+  const handleBackfillAffinity = async () => {
+    if (!confirm('🔄 Backfill all historical alerts to Affinity CRM?\n\nThis will create notes for all previously sent alerts with their original sent dates. This may take several minutes.\n\nContinue?')) {
+      return;
+    }
+
+    setIsBackfilling(true);
+    const loadingToast = toast.loading('Backfilling historical alerts to Affinity...');
+    
+    try {
+      const response = await base44.functions.invoke('backfillAffinityNotes');
+      const data = response.data;
+      
+      toast.dismiss(loadingToast);
+      
+      if (data.success) {
+        toast.success(`✅ Backfill complete! Created ${data.notes_created} notes and ${data.tasks_created} tasks in Affinity (${data.failures} failures, ${data.skipped} skipped)`);
+      } else {
+        toast.error(`Backfill failed: ${data.error}`);
+      }
+    } catch (error) {
+      toast.dismiss(loadingToast);
+      toast.error(`Backfill failed: ${error.message}`);
+    } finally {
+      setIsBackfilling(false);
+    }
+  };
+
   const ownersList = Object.values(alertsByOwner);
 
   if (alertsLoading) {
@@ -219,25 +248,44 @@ export default function DigestRecoveryPage() {
             <h1 className="text-3xl font-bold text-slate-900">Digest Recovery</h1>
             <p className="text-slate-600 mt-1">Review and resend recent digests (last 7 days)</p>
           </div>
-          {ownersList.length > 0 && (
+          <div className="flex gap-3">
             <Button
-              onClick={handleResendAll}
-              disabled={sendingTo !== null}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={handleBackfillAffinity}
+              disabled={isBackfilling}
+              variant="outline"
+              className="bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100"
             >
-              {sendingTo === 'all' ? (
+              {isBackfilling ? (
                 <>
-                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                  Sending...
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Backfilling...
                 </>
               ) : (
                 <>
-                  <Send className="w-4 h-4 mr-2" />
-                  Resend All Digests
+                  🔄 Backfill Affinity Notes
                 </>
               )}
             </Button>
-          )}
+            {ownersList.length > 0 && (
+              <Button
+                onClick={handleResendAll}
+                disabled={sendingTo !== null}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                {sendingTo === 'all' ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 mr-2" />
+                    Resend All Digests
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
         </div>
 
         {debugInfo && (
