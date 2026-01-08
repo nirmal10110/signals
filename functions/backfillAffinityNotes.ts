@@ -8,7 +8,13 @@ const TIER_1_TASK_TRIGGERS = new Set([
     'new_office_opened', 'culture_initiative', 'birthday_reminder', 'event_participation'
 ]);
 
-async function pushAlertToAffinity(alert, affinityApiKey, organizationId) {
+async function pushAlertToAffinity(alert, affinityApiKey, organizationId, base44) {
+    // Skip if already synced to Affinity
+    if (alert.affinity_synced) {
+        console.log(`   ⏭️ Skipping - already synced to Affinity`);
+        return { success: true, skipped: true, reason: 'Already synced' };
+    }
+
     const authHeader = 'Basic ' + btoa(':' + affinityApiKey);
     
     try {
@@ -70,12 +76,24 @@ Backfilled from Volpi Lens Intelligence Platform
                 })
             });
 
+            // Mark as synced
+            await base44.asServiceRole.entities.Alert.update(alert.id, {
+                affinity_synced: true,
+                affinity_synced_date: new Date().toISOString()
+            });
+
             return { 
                 success: true, 
                 note_id: noteData.id, 
                 task_created: taskResponse.ok 
             };
         }
+
+        // Mark as synced (note was created)
+        await base44.asServiceRole.entities.Alert.update(alert.id, {
+            affinity_synced: true,
+            affinity_synced_date: new Date().toISOString()
+        });
 
         return { success: true, note_id: noteData.id, task_created: false };
     } catch (error) {
@@ -186,12 +204,17 @@ Deno.serve(async (req) => {
 
                 // Process each alert for this company
                 for (const alert of companyAlerts) {
-                    const result = await pushAlertToAffinity(alert, affinityApiKey, organizationId);
+                    const result = await pushAlertToAffinity(alert, affinityApiKey, organizationId, base44);
                     
                     if (result.success) {
-                        results.notes_created++;
-                        if (result.task_created) results.tasks_created++;
-                        console.log(`   ✅ Backfilled: ${alert.headline.substring(0, 60)}...`);
+                        if (result.skipped) {
+                            results.skipped++;
+                            console.log(`   ⏭️ Already synced: ${alert.headline.substring(0, 60)}...`);
+                        } else {
+                            results.notes_created++;
+                            if (result.task_created) results.tasks_created++;
+                            console.log(`   ✅ Backfilled: ${alert.headline.substring(0, 60)}...`);
+                        }
                     } else {
                         results.failures++;
                         console.log(`   ❌ Failed: ${alert.headline.substring(0, 60)}... (${result.reason})`);
