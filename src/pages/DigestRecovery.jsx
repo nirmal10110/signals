@@ -61,6 +61,7 @@ export default function DigestRecoveryPage() {
   const [alertsByOwner, setAlertsByOwner] = useState({});
   const [debugInfo, setDebugInfo] = useState(null);
   const [isBackfilling, setIsBackfilling] = useState(false);
+  const [backfillResults, setBackfillResults] = useState(null);
 
   const { data: alerts = [], isLoading: alertsLoading, error: alertsError } = useQuery({
     queryKey: ['alerts'],
@@ -205,6 +206,7 @@ export default function DigestRecoveryPage() {
       toast.dismiss(loadingToast);
       
       if (data.success) {
+        setBackfillResults(data);
         toast.success(`✅ Backfill complete! Created ${data.notes_created} notes and ${data.tasks_created} tasks in Affinity (${data.failures} failures, ${data.skipped} skipped)`);
       } else {
         toast.error(`Backfill failed: ${data.error}`);
@@ -295,9 +297,43 @@ export default function DigestRecoveryPage() {
               <strong>Status:</strong> {debugInfo.totalAlerts} total alerts • {debugInfo.sentAlerts} sent in last 7 days • {debugInfo.unsentAlerts} pending • {debugInfo.ownersWithDigests} owner(s) with sent digests
             </AlertDescription>
           </Alert>
-        )}
+          )}
 
-        {ownersList.length === 0 ? (
+          {backfillResults && (
+          <Card className="bg-purple-50 border-purple-200 mb-6">
+            <CardHeader>
+              <CardTitle className="text-lg font-bold text-purple-900 flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5" />
+                Affinity Backfill Results
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white p-4 rounded-lg border border-purple-200">
+                  <p className="text-2xl font-bold text-emerald-600">{backfillResults.notes_created}</p>
+                  <p className="text-sm text-slate-600">Notes Created</p>
+                </div>
+                <div className="bg-white p-4 rounded-lg border border-purple-200">
+                  <p className="text-2xl font-bold text-blue-600">{backfillResults.tasks_created}</p>
+                  <p className="text-sm text-slate-600">Tasks Created</p>
+                </div>
+                <div className="bg-white p-4 rounded-lg border border-purple-200">
+                  <p className="text-2xl font-bold text-red-600">{backfillResults.failures}</p>
+                  <p className="text-sm text-slate-600">Failures</p>
+                </div>
+                <div className="bg-white p-4 rounded-lg border border-purple-200">
+                  <p className="text-2xl font-bold text-slate-600">{backfillResults.skipped}</p>
+                  <p className="text-sm text-slate-600">Skipped</p>
+                </div>
+              </div>
+              <p className="text-sm text-slate-600 mt-4">
+                Total alerts processed: {backfillResults.notes_created + backfillResults.failures + backfillResults.skipped}
+              </p>
+            </CardContent>
+          </Card>
+          )}
+
+          {ownersList.length === 0 ? (
           <Card className="bg-white border-slate-200">
             <CardContent className="p-12 text-center">
               <Mail className="w-16 h-16 mx-auto mb-6 text-slate-300" />
