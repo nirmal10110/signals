@@ -450,14 +450,18 @@ Deno.serve(async (req) => {
                 });
 
                 console.log(`\n🔄 Pushing ${allAlertsForOwner.length} alerts to Affinity CRM...`);
-                
+
                 // Push alerts to Affinity CRM (only for sent digest alerts)
                 for (const alert of allAlertsForOwner) {
-                    const affinityResult = await pushAlertToAffinity(alert, ownerEmail);
-                    
+                    const affinityResult = await pushAlertToAffinity(alert, ownerEmail, base44);
+
                     if (affinityResult.success) {
-                        if (affinityResult.note) affinityResults.notes_created++;
-                        if (affinityResult.task) affinityResults.tasks_created++;
+                        if (affinityResult.skipped) {
+                            // Already synced, don't count
+                        } else {
+                            if (affinityResult.note) affinityResults.notes_created++;
+                            if (affinityResult.task) affinityResults.tasks_created++;
+                        }
                     } else {
                         affinityResults.failures++;
                     }
