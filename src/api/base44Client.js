@@ -8,5 +8,11 @@ export const base44 = {
     func: async (name, args) => {
         console.warn(`Called legacy function ${name}`, args);
         return { success: false, message: "Legacy function not supported" };
+    },
+    appLogs: {
+        logUserInApp: async (pageName) => {
+            console.log(`[Shim] Logging user in app page: ${pageName}`);
+            return { success: true };
+        }
     }
 };
